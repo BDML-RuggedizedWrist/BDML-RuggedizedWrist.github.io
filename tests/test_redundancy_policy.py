@@ -31,6 +31,37 @@ def test_yaw_phase_uses_only_distal_yaw_joint_target():
     assert target[8] == pytest.approx(0.25)
 
 
+def test_challenge_pitch_holds_main_arm_and_uses_negative_pitch_axis():
+    policy = RedundancyPolicy()
+    phase_start = np.linspace(-0.4, 0.4, 9)
+    policy.begin_phase("CHALLENGE_PITCH_ONLY", phase_start)
+
+    target = policy.target(
+        phase_start + 0.05,
+        relative_pitch=np.deg2rad(50.0),
+        relative_yaw=0.0,
+    )
+
+    assert target[:7] == pytest.approx(phase_start[:7])
+    assert target[7] == pytest.approx(-np.deg2rad(50.0))
+    assert target[8] == pytest.approx(0.0)
+
+
+def test_yaw_target_is_positive_and_pitch_axis_is_zero():
+    policy = RedundancyPolicy()
+    policy.begin_phase("YAW_ONLY", np.zeros(9))
+
+    target = policy.target(
+        np.zeros(9),
+        relative_pitch=0.0,
+        relative_yaw=np.deg2rad(45.0),
+    )
+
+    assert target[:7] == pytest.approx(np.zeros(7))
+    assert target[7] == pytest.approx(0.0)
+    assert target[8] == pytest.approx(np.deg2rad(45.0))
+
+
 def test_scan_returns_wrist_to_neutral_without_changing_arm_reference():
     policy = RedundancyPolicy(num_arm_joints=7, num_wrist_joints=2)
     start = np.arange(9, dtype=float) / 10.0

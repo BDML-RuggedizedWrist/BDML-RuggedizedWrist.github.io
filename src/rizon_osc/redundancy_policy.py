@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 
+PITCH_PHASES = {"PITCH_ONLY", "CHALLENGE_PITCH_ONLY"}
+YAW_PHASES = {"YAW_ONLY"}
+
 
 class RedundancyPolicy:
     """Prefer the distal wrist without implementing a second controller.
@@ -41,10 +44,10 @@ class RedundancyPolicy:
             self.begin_phase(self._phase or "SURFACE_SCAN", current)
         assert self._phase_start is not None
         target = self._phase_start.copy()
-        if self._phase == "PITCH_ONLY":
+        if self._phase in PITCH_PHASES:
             target[-2] = -float(relative_pitch)
             target[-1] = 0.0
-        elif self._phase == "YAW_ONLY":
+        elif self._phase in YAW_PHASES:
             target[-2] = 0.0
             target[-1] = float(relative_yaw)
         else:
