@@ -16,6 +16,7 @@ import numpy as np
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from rizon_osc.collision import CollisionMonitor
 from rizon_osc.force_control import ContactForceFilter
 from rizon_osc.metrics import AcceptanceMetrics, MetricSample
 from rizon_osc.osc_profile import hybrid_osc_kwargs, pose_osc_kwargs
@@ -147,6 +148,20 @@ ROBOT_START = {
     "wrist_pitch_joint": 0.0,
     "wrist_roll_joint": 0.0,
 }
+
+NON_PROBE_BODY_SUFFIXES = (
+    "link1",
+    "link2",
+    "link3",
+    "link4",
+    "link5",
+    "link6",
+    "link7",
+    "flange",
+    "flange/wrist_base",
+    "flange/wrist_base/wrist_pitch_link",
+    "flange/wrist_base/wrist_pitch_link/probe_roll_output",
+)
 
 
 def make_robot_cfg(root_y: float, wrist_active: bool) -> ArticulationCfg:
@@ -339,6 +354,27 @@ def make_hybrid_osc(device: str) -> OperationalSpaceController:
     return OperationalSpaceController(cfg, num_envs=1, device=device)
 
 
+def make_patient_collision_sensors(side: str) -> list[ContactSensor]:
+    """Create patient-filtered non-probe contact sensors for one robot."""
+    robot_name = f"Robot{side}DoF"
+    patient_name = f"Patient{side}DoF"
+    patient_surface = (
+        f"/World/envs/env_.*/{patient_name}/torso_collider/"
+        "upper_torso_contact_surface"
+    )
+    return [
+        ContactSensor(
+            ContactSensorCfg(
+                prim_path=f"/World/envs/env_.*/{robot_name}/{suffix}",
+                update_period=0.0,
+                history_length=2,
+                filter_prim_paths_expr=[patient_surface],
+            )
+        )
+        for suffix in NON_PROBE_BODY_SUFFIXES
+    ]
+
+
 def robot_state(
     robot: Articulation,
     ee_body_idx: int,
@@ -422,6 +458,23 @@ def sensor_reaction_force_w(sensor: ContactSensor, device: str) -> torch.Tensor:
     if net_force is not None:
         return net_force.sum(dim=1)
     return torch.zeros((1, 3), device=device)
+
+
+def maximum_patient_contact_force(
+    sensors: list[ContactSensor], dt: float
+) -> float:
+    """Return the maximum patient-filtered non-probe contact magnitude."""
+    maximum = 0.0
+    for sensor in sensors:
+        sensor.update(dt, force_recompute=True)
+        history = _tensor_data(sensor.data.force_matrix_w_history)
+        if history is None:
+            raise RuntimeError("patient-filtered force history is unavailable")
+        maximum = max(
+            maximum,
+            float(torch.linalg.vector_norm(history, dim=-1).max().item()),
+        )
+    return maximum
 
 
 def task_tensors(
@@ -599,6 +652,9 @@ def run_simulator(
     sim: sim_utils.SimulationContext,
     scene: InteractiveScene,
     surface: SurfaceMap,
+    *,
+    collision_sensors_7: list[ContactSensor],
+    collision_sensors_9: list[ContactSensor],
 ) -> dict:
     robot_7: Articulation = scene["robot_7dof"]
     robot_9: Articulation = scene["robot_9dof"]
@@ -673,7 +729,7 @@ def run_simulator(
         f"{math.degrees(torch.linalg.norm(initial_rotation).item()):.3f} deg"
     )
     initial_reference = trajectory.reference(0.0)
-    _, _, initial_target_b, initial_normal_b, _ = task_tensors(
+    initial_task_frame_b, initial_pose_task, initial_target_b, initial_normal_b, _ = task_tensors(
         initial_reference, sim.device
     )
     initial_position_error, initial_orientation_error = compute_pose_error(
@@ -703,6 +759,8 @@ def run_simulator(
     supervisor_9 = ContactSupervisor(contact_loss_limit=args_cli.contact_loss_limit)
     force_filter_7 = ContactForceFilter(history_length=4, low_pass_alpha=0.5)
     force_filter_9 = ContactForceFilter(history_length=4, low_pass_alpha=0.5)
+    collision_monitor_7 = CollisionMonitor()
+    collision_monitor_9 = CollisionMonitor()
     metrics = AcceptanceMetrics(force_target=args_cli.normal_force)
 
     effort_limits_7 = torch.tensor(
@@ -750,6 +808,8 @@ def run_simulator(
         dtype=torch.float32,
         device=sim.device,
     )
+    last_safe_red_task_frame = initial_task_frame_b.clone()
+    last_safe_red_pose_task = initial_pose_task.clone()
 
     while simulation_app.is_running():
         state_7 = robot_state(robot_7, ee_7_idx, joints_7)
@@ -757,6 +817,12 @@ def run_simulator(
         reference = trajectory.reference(task_time)
         task_frame_b, pose_task, target_b, normal_b, wrench_task = task_tensors(
             reference, sim.device
+        )
+        collision_7 = collision_monitor_7.update(
+            maximum_patient_contact_force(collision_sensors_7, dt)
+        )
+        collision_monitor_9.update(
+            maximum_patient_contact_force(collision_sensors_9, dt)
         )
 
         if reference.phase.value != previous_phase:
@@ -835,19 +901,29 @@ def run_simulator(
         if shared_acquiring and reference.phase is not Phase.CONTACT_RAMP:
             task_frame = task_frame_b.clone()
             task_frame[:, :3] -= 0.002 * normal_b
+        if not collision_7.freeze_path:
+            last_safe_red_task_frame = task_frame.clone()
+            last_safe_red_pose_task = pose_task.clone()
+        red_task_frame = (
+            last_safe_red_task_frame if collision_7.freeze_path else task_frame
+        )
+        red_pose_task = last_safe_red_pose_task if collision_7.freeze_path else pose_task
         use_pose_osc = reference.phase is Phase.APPROACH or shared_acquiring
         command = pose_command if use_pose_osc else hybrid_command
-        osc_7 = pose_osc_7 if use_pose_osc else hybrid_osc_7
+        red_use_pose_osc = use_pose_osc or collision_7.freeze_path
+        red_pose_command = torch.cat((red_pose_task, pose_kp_task), dim=-1)
+        osc_7 = pose_osc_7 if red_use_pose_osc else hybrid_osc_7
         osc_9 = pose_osc_9 if use_pose_osc else hybrid_osc_9
         commanded_force = abs(float(wrench_task[0, 2].item())) if not use_pose_osc else 0.0
-        commanded_force_7 = commanded_force
+        commanded_force_7 = 0.0 if collision_7.freeze_path else commanded_force
         commanded_force_9 = commanded_force
-        actual_target_b = compose_task_target(task_frame, pose_task)
-        references_identical = True
+        actual_target_7_b = compose_task_target(red_task_frame, red_pose_task)
+        actual_target_9_b = compose_task_target(task_frame, pose_task)
+        references_identical = not collision_7.freeze_path
         osc_7.set_command(
-            command,
+            red_pose_command if red_use_pose_osc else command,
             current_ee_pose_b=state_7[3],
-            current_task_frame_pose_b=task_frame,
+            current_task_frame_pose_b=red_task_frame,
         )
         osc_9.set_command(
             command,
@@ -908,8 +984,8 @@ def run_simulator(
         robot_7.write_data_to_sim()
         robot_9.write_data_to_sim()
 
-        target_7_w = world_pose(robot_7, actual_target_b)
-        target_9_w = world_pose(robot_9, actual_target_b)
+        target_7_w = world_pose(robot_7, actual_target_7_b)
+        target_9_w = world_pose(robot_9, actual_target_9_b)
         markers["current_7"].visualize(state_7[5][:, :3], state_7[5][:, 3:7])
         markers["current_9"].visualize(state_9[5][:, :3], state_9[5][:, 3:7])
         markers["target_7"].visualize(target_7_w[:, :3], target_7_w[:, 3:7])
@@ -918,8 +994,8 @@ def run_simulator(
         force_quaternion_b = arrow_quaternion_from_x(force_direction_b)
         reaction_quaternion_b = arrow_quaternion_from_x(normal_b)
         marker_values = {
-            "7": (robot_7, actual_target_b, commanded_force_7, filtered_7),
-            "9": (robot_9, actual_target_b, commanded_force_9, filtered_9),
+            "7": (robot_7, actual_target_7_b, commanded_force_7, filtered_7),
+            "9": (robot_9, actual_target_9_b, commanded_force_9, filtered_9),
         }
         for side, (robot, actual_target_b, commanded_force, measured_force) in marker_values.items():
             command_arrow_b = torch.cat(
@@ -1134,10 +1210,18 @@ def main() -> int:
     sim = sim_utils.SimulationContext(sim_cfg)
     sim.set_camera_view(eye=(2.9, 3.6, 2.15), target=(0.55, -0.20, 0.60))
     scene = InteractiveScene(ComparisonSceneCfg(num_envs=1, env_spacing=3.0))
+    collision_sensors_7 = make_patient_collision_sensors("7")
+    collision_sensors_9 = make_patient_collision_sensors("9")
     sim.reset()
     scene.update(sim.get_physics_dt())
     print("[INFO] Fixed Assembly3 scene ready.")
-    report = run_simulator(sim, scene, surface)
+    report = run_simulator(
+        sim,
+        scene,
+        surface,
+        collision_sensors_7=collision_sensors_7,
+        collision_sensors_9=collision_sensors_9,
+    )
     if args_cli.validation_report is not None:
         target = args_cli.validation_report.expanduser()
         if not target.is_absolute():

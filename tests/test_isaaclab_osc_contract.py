@@ -43,9 +43,11 @@ def test_runner_shares_pre_collision_acquisition_command_and_task_frame():
     assert "shared_acquiring =" in source
     assert "task_frame = task_frame_b" in source
     assert "command = pose_command if use_pose_osc else hybrid_command" in source
-    assert "osc_7 = pose_osc_7 if use_pose_osc else hybrid_osc_7" in source
+    assert "red_use_pose_osc = use_pose_osc or collision_7.freeze_path" in source
+    assert "osc_7 = pose_osc_7 if red_use_pose_osc else hybrid_osc_7" in source
     assert "osc_9 = pose_osc_9 if use_pose_osc else hybrid_osc_9" in source
-    assert source.count("current_task_frame_pose_b=task_frame") == 2
+    assert "current_task_frame_pose_b=red_task_frame" in source
+    assert source.count("current_task_frame_pose_b=task_frame") == 1
     assert "acquiring_7 =" not in source
     assert "acquiring_9 =" not in source
     assert "task_frame_7 =" not in source
@@ -58,10 +60,20 @@ def test_runner_uses_official_net_contact_force_history():
     source = RUNNER.read_text()
 
     assert "sensor.data.net_forces_w_history" in source
-    assert "filter_prim_paths_expr=[" not in source
     sensor_helper = source.split("def sensor_reaction_force_w", maxsplit=1)[1]
-    sensor_helper = sensor_helper.split("def task_tensors", maxsplit=1)[0]
+    sensor_helper = sensor_helper.split("def maximum_patient_contact_force", maxsplit=1)[0]
     assert "force_matrix_w_history" not in sensor_helper
+
+
+def test_runner_separates_probe_contact_from_patient_collision():
+    source = RUNNER.read_text()
+
+    assert "NON_PROBE_BODY_SUFFIXES" in source
+    assert '"linear_probe"' not in source.split(
+        "NON_PROBE_BODY_SUFFIXES =", maxsplit=1
+    )[1].split(")", maxsplit=1)[0]
+    assert "force_matrix_w_history" in source
+    assert "maximum_patient_contact_force" in source
 
 
 def test_relative_validation_report_is_anchored_to_project_root():
