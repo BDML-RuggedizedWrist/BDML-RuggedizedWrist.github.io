@@ -31,7 +31,7 @@ from rizon_osc.trajectory import (
     Phase,
     SurfaceTrajectory,
     quaternion_from_rotation_matrix,
-    rotation_matrix_from_quaternion,
+    split_task_frame_rotation,
 )
 
 from isaaclab.app import AppLauncher
@@ -416,7 +416,7 @@ def robot_state(
         root_pos_w, root_quat_w, ee_pos_w, ee_quat_w
     )
     relative_velocity_w = (
-        robot.data.body_vel_w.torch[:, ee_body_idx] - robot.data.root_vel_w.torch
+        robot.data.body_link_vel_w.torch[:, ee_body_idx] - robot.data.root_vel_w.torch
     )
     linear_velocity_b = quat_apply_inverse(root_quat_w, relative_velocity_w[:, :3])
     angular_velocity_b = quat_apply_inverse(root_quat_w, relative_velocity_w[:, 3:])
@@ -555,11 +555,9 @@ def task_tensors(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Transform one Assembly3-local reference into the common robot-base task."""
     target_position_b = trajectory_reference.position + SURFACE_TRANSLATION_B
-    target_rotation = rotation_matrix_from_quaternion(
-        trajectory_reference.quaternion
+    neutral_rotation, relative_rotation = split_task_frame_rotation(
+        trajectory_reference.quaternion, trajectory_reference.relative_rpy
     )
-    relative_rotation = _rotation_from_rpy(trajectory_reference.relative_rpy)
-    neutral_rotation = target_rotation @ relative_rotation.T
     neutral_quaternion = quaternion_from_rotation_matrix(neutral_rotation)
     relative_quaternion = quaternion_from_rotation_matrix(relative_rotation)
     task_frame_b = torch.tensor(
@@ -586,20 +584,6 @@ def task_tensors(
         device=device,
     )
     return task_frame_b, pose_task, target_b, normal_b, wrench_task
-
-
-def _rotation_from_rpy(relative_rpy: np.ndarray) -> np.ndarray:
-    roll, pitch, yaw = relative_rpy
-    cr, sr = math.cos(roll), math.sin(roll)
-    cp, sp = math.cos(pitch), math.sin(pitch)
-    cy, sy = math.cos(yaw), math.sin(yaw)
-    return np.array(
-        [
-            [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
-            [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
-            [-sp, cp * sr, cp * cr],
-        ]
-    )
 
 
 def world_pose(robot: Articulation, pose_b: torch.Tensor) -> torch.Tensor:

@@ -63,6 +63,17 @@ def test_runner_uses_official_net_contact_force_history():
     assert "force_matrix_w_history" not in sensor_helper
 
 
+def test_robot_state_velocity_uses_the_same_link_frame_as_pose_and_jacobian():
+    """A COM velocity must not be shifted again as though it were link velocity."""
+    source = RUNNER.read_text()
+    robot_state = source.split("def robot_state(", maxsplit=1)[1]
+    robot_state = robot_state.split("def verify_wrist_axis_signs(", maxsplit=1)[0]
+
+    assert "body_link_jacobian_w" in robot_state
+    assert "body_link_vel_w" in robot_state
+    assert "body_vel_w" not in robot_state
+
+
 def test_runner_verifies_authored_wrist_axis_signs_before_control():
     """A swapped authored wrist axis must abort before any OSC torque exists."""
     source = RUNNER.read_text()

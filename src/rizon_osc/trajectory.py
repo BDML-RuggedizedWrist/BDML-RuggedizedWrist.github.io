@@ -141,6 +141,15 @@ def _rotation_from_rpy(roll: float, pitch: float, yaw: float) -> np.ndarray:
     )
 
 
+def split_task_frame_rotation(
+    target_quaternion: np.ndarray, relative_rpy: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Split a world/base target rotation into OSC task frame and relative pose."""
+    target_rotation = rotation_matrix_from_quaternion(target_quaternion)
+    relative_rotation = _rotation_from_rpy(*np.asarray(relative_rpy, dtype=np.float64))
+    return target_rotation @ relative_rotation.T, relative_rotation
+
+
 def _angular_velocity(rotation_minus: np.ndarray, rotation_plus: np.ndarray, dt: float) -> np.ndarray:
     rotation_rate = (rotation_plus - rotation_minus) / (2.0 * dt)
     omega_skew = rotation_rate @ ((rotation_plus + rotation_minus) * 0.5).T

@@ -5,6 +5,7 @@ from rizon_osc.surface_model import SurfaceMap
 from rizon_osc.trajectory import (
     Phase,
     SurfaceTrajectory,
+    split_task_frame_rotation,
     quintic_progress,
     rotation_matrix_from_quaternion,
 )
@@ -154,6 +155,26 @@ def test_fixed_contact_orientation_changes_one_axis_at_a_time(curved_surface):
     assert yaw.relative_rpy[1] == pytest.approx(0.0)
     assert abs(yaw.relative_rpy[2]) > 0.1
     assert pitch.contact_point == pytest.approx(yaw.contact_point)
+
+
+@pytest.mark.parametrize(
+    "time_seconds",
+    (0.0, 1.25, 4.0, 6.1, 7.8, 10.5),
+)
+def test_task_frame_and_relative_pose_recompose_the_reference_rotation(
+    curved_surface, time_seconds
+):
+    """OSC task-frame decomposition must preserve every trajectory reference."""
+    trajectory = make_full_trajectory(curved_surface)
+    reference = trajectory.reference(time_seconds)
+
+    task_frame_rotation, relative_rotation = split_task_frame_rotation(
+        reference.quaternion, reference.relative_rpy
+    )
+
+    assert task_frame_rotation @ relative_rotation == pytest.approx(
+        rotation_matrix_from_quaternion(reference.quaternion), abs=1e-7
+    )
 
 
 def test_reorientation_sequence_finishes_in_neutral_hold(curved_surface):
