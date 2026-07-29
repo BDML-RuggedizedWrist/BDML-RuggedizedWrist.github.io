@@ -236,3 +236,144 @@ def test_watchdog_rejects_wrong_shapes(field, value):
 
     with pytest.raises(ValueError, match=field):
         watchdog.update(sample(**{field: value}))
+
+
+@pytest.mark.parametrize("dt_s", (np.nan, np.inf, -np.inf))
+def test_nonfinite_dt_latches_instead_of_raising(dt_s):
+    snapshot = ValidationWatchdog().update(sample(dt_s=dt_s))
+
+    assert snapshot.reasons == ("nonfinite",)
+    assert snapshot.first_failure_step == 1
+
+
+def test_nonpositive_finite_dt_remains_an_input_error():
+    with pytest.raises(ValueError, match="dt_s"):
+        ValidationWatchdog().update(sample(dt_s=0.0))
+
+
+def test_nonfinite_contact_payload_latches():
+    snapshot = ValidationWatchdog().update(
+        sample(contact_present=np.array([True, np.nan]))
+    )
+
+    assert snapshot.reasons == ("nonfinite",)
+
+
+def test_nonnumeric_object_payload_latches_instead_of_raising():
+    snapshot = ValidationWatchdog().update(
+        sample(finite_payloads=(np.array(["not-a-number"], dtype=object),))
+    )
+
+    assert snapshot.reasons == ("nonfinite",)
+
+
+@pytest.mark.parametrize(
+    "field,active,reason",
+    (
+        (
+            "wrist_position_rad",
+            np.array([1.56, 0.0]),
+            "green_wrist_limit_j8",
+        ),
+        (
+            "wrist_velocity_rad_s",
+            np.array([0.0, -1.99]),
+            "green_wrist_speed_j9",
+        ),
+    ),
+)
+@pytest.mark.parametrize("dt_s,count", ((0.01, 10), (0.004, 25)))
+def test_inclusive_wrist_timers_fire_at_nominal_tenth_second(
+    field, active, reason, dt_s, count
+):
+    watchdog = ValidationWatchdog()
+    current = sample(dt_s=dt_s, **{field: active})
+
+    assert advance(watchdog, current, count - 1).passed
+    assert reason in watchdog.update(replace(current, step=count)).reasons
+
+
+@pytest.mark.parametrize("dt_s,count", ((0.01, 10), (0.004, 25)))
+def test_strict_contact_timer_is_safe_at_nominal_tenth_second(dt_s, count):
+    watchdog = ValidationWatchdog()
+    lost = sample(dt_s=dt_s, contact_present=np.array([True, False]))
+
+    assert advance(watchdog, lost, count).passed
+    stopped = watchdog.update(replace(lost, step=count + 1))
+
+    assert "probe_contact_loss_9" in stopped.reasons
+
+
+def _translation_freeze_after_exact_window(dt_s: float, intervals: int):
+    watchdog = ValidationWatchdog()
+    snapshot = watchdog.snapshot()
+    for index in range(intervals + 1):
+        target = np.zeros((2, 3))
+        target[1, 0] = 0.002 * index / intervals
+        snapshot = watchdog.update(
+            sample(
+                step=index,
+                dt_s=dt_s,
+                target_position_m=target,
+            )
+        )
+    return snapshot
+
+
+@pytest.mark.parametrize("dt_s,intervals", ((0.05, 5), (0.01, 25)))
+def test_translation_freeze_checks_the_exact_quarter_second_window(
+    dt_s, intervals
+):
+    snapshot = _translation_freeze_after_exact_window(dt_s, intervals)
+
+    assert "task_freeze_translation_9" in snapshot.reasons
+
+
+def test_rotation_freeze_accepts_exact_half_degree_command_boundary():
+    watchdog = ValidationWatchdog()
+    snapshot = watchdog.snapshot()
+    for index in range(6):
+        target = sample().target_quaternion_wxyz.copy()
+        target[0] = z_rotation(np.deg2rad(0.5) * index / 5)
+        snapshot = watchdog.update(
+            sample(step=index, dt_s=0.05, target_quaternion_wxyz=target)
+        )
+
+    assert "task_freeze_rotation_7" in snapshot.reasons
+
+
+def test_red_freeze_remains_disabled_after_a_one_shot_collision_stop():
+    watchdog = ValidationWatchdog()
+    watchdog.update(sample(red_collision_stop=True))
+    snapshot = watchdog.snapshot()
+    for index in range(1, 28):
+        target = np.zeros((2, 3))
+        target[0, 0] = 0.002 * index / 27
+        snapshot = watchdog.update(
+            sample(
+                step=index,
+                dt_s=0.01,
+                phase="CHALLENGE_PITCH_ONLY",
+                target_position_m=target,
+            )
+        )
+
+    assert snapshot.passed
+
+
+def test_watchdog_sample_defensively_copies_and_freezes_array_payloads():
+    wrist_position = np.zeros(2)
+    finite_payload = np.array([1.0])
+    watchdog_sample = sample(
+        wrist_position_rad=wrist_position,
+        finite_payloads=(finite_payload,),
+    )
+    wrist_position[0] = 1.56
+    finite_payload[0] = np.nan
+
+    assert watchdog_sample.wrist_position_rad.tolist() == [0.0, 0.0]
+    assert watchdog_sample.finite_payloads[0].tolist() == [1.0]
+    with pytest.raises(ValueError):
+        watchdog_sample.wrist_position_rad[0] = 1.56
+    with pytest.raises(ValueError):
+        watchdog_sample.finite_payloads[0][0] = np.nan

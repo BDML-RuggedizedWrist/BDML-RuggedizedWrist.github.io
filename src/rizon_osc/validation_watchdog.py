@@ -15,6 +15,33 @@ CHALLENGE_PHASES = {
     "RETURN_NEUTRAL",
 }
 
+FLOAT_TOLERANCE = 1.0e-9
+
+
+def _readonly_array(value: np.ndarray) -> np.ndarray:
+    copied = np.array(value, copy=True)
+    copied.setflags(write=False)
+    return copied
+
+
+def _is_finite(value: object) -> bool:
+    try:
+        return bool(np.isfinite(np.asarray(value)).all())
+    except (TypeError, ValueError):
+        return False
+
+
+def _at_least(value: float, threshold: float) -> bool:
+    return value >= threshold - FLOAT_TOLERANCE
+
+
+def _strictly_exceeds(value: float, threshold: float) -> bool:
+    return value > threshold + FLOAT_TOLERANCE
+
+
+def _strictly_less(value: float, threshold: float) -> bool:
+    return value < threshold - FLOAT_TOLERANCE
+
 
 @dataclass(frozen=True)
 class WatchdogSample:
@@ -34,6 +61,26 @@ class WatchdogSample:
     target_quaternion_wxyz: np.ndarray
     measured_quaternion_wxyz: np.ndarray
     finite_payloads: tuple[np.ndarray, ...] = ()
+
+    def __post_init__(self) -> None:
+        for field in (
+            "wrist_position_rad",
+            "wrist_velocity_rad_s",
+            "wrist_limits_rad",
+            "contact_present",
+            "measured_normal_force_n",
+            "nonprobe_force_n",
+            "target_position_m",
+            "measured_position_m",
+            "target_quaternion_wxyz",
+            "measured_quaternion_wxyz",
+        ):
+            object.__setattr__(self, field, _readonly_array(getattr(self, field)))
+        object.__setattr__(
+            self,
+            "finite_payloads",
+            tuple(_readonly_array(value) for value in self.finite_payloads),
+        )
 
 
 @dataclass(frozen=True)
@@ -105,6 +152,7 @@ class ValidationWatchdog:
         self._reasons: list[str] = []
         self._first_failure_step: int | None = None
         self._challenge_started = False
+        self._red_collision_stopped = False
         self._near_limit_s = np.zeros(2)
         self._overspeed_s = np.zeros(2)
         self._contact_loss_s = np.zeros(2)
@@ -167,14 +215,22 @@ class ValidationWatchdog:
         measured_quaternion = self._array(
             sample, "measured_quaternion_wxyz", (2, 4)
         )
-        dt = float(sample.dt_s)
-        if not math.isfinite(dt) or dt <= 0.0:
+        try:
+            dt = float(sample.dt_s)
+        except (TypeError, ValueError):
+            self._fail("nonfinite", sample.step)
+            return self.snapshot()
+        if not math.isfinite(dt):
+            self._fail("nonfinite", sample.step)
+            return self.snapshot()
+        if dt <= 0.0:
             raise ValueError("dt_s must be finite and positive")
 
         finite_arrays = (
             wrist_position,
             wrist_velocity,
             wrist_limits,
+            contact_present,
             measured_force,
             nonprobe_force,
             target_position,
@@ -183,13 +239,16 @@ class ValidationWatchdog:
             measured_quaternion,
             *(np.asarray(value) for value in sample.finite_payloads),
         )
-        if not all(np.isfinite(value).all() for value in finite_arrays):
+        if not all(_is_finite(value) for value in finite_arrays):
             self._fail("nonfinite", sample.step)
             return self.snapshot()
 
         self._time_s += dt
         self._challenge_started = (
             self._challenge_started or sample.phase in CHALLENGE_PHASES
+        )
+        self._red_collision_stopped = (
+            self._red_collision_stopped or sample.red_collision_stop
         )
         self._max_force_n = np.maximum(
             self._max_force_n, np.abs(measured_force)
@@ -218,11 +277,15 @@ class ValidationWatchdog:
             self._max_overspeed_s, self._overspeed_s
         )
         for joint_index, joint_name in enumerate(("j8", "j9")):
-            if self._near_limit_s[joint_index] >= self.LIMIT_DURATION_S:
+            if _at_least(
+                self._near_limit_s[joint_index], self.LIMIT_DURATION_S
+            ):
                 self._fail(
                     f"green_wrist_limit_{joint_name}", sample.step
                 )
-            if self._overspeed_s[joint_index] >= self.SPEED_DURATION_S:
+            if _at_least(
+                self._overspeed_s[joint_index], self.SPEED_DURATION_S
+            ):
                 self._fail(
                     f"green_wrist_speed_{joint_name}", sample.step
                 )
@@ -239,9 +302,9 @@ class ValidationWatchdog:
             self._max_contact_loss_s, self._contact_loss_s
         )
         for side_index, side_name in enumerate(("7", "9")):
-            if (
-                self._contact_loss_s[side_index]
-                > self.CONTACT_LOSS_DURATION_S
+            if _strictly_exceeds(
+                self._contact_loss_s[side_index],
+                self.CONTACT_LOSS_DURATION_S,
             ):
                 self._fail(
                     f"probe_contact_loss_{side_name}", sample.step
@@ -263,7 +326,7 @@ class ValidationWatchdog:
 
         for side_index, side_name in enumerate(("7", "9")):
             history = self._pose_history[side_index]
-            if side_index == 0 and sample.red_collision_stop:
+            if side_index == 0 and self._red_collision_stopped:
                 history.clear()
                 continue
             history.append(
@@ -280,10 +343,15 @@ class ValidationWatchdog:
                 )
             )
             cutoff = self._time_s - self.FREEZE_WINDOW_S
-            while len(history) >= 2 and history[1].time_s <= cutoff:
+            while (
+                len(history) >= 2
+                and history[1].time_s <= cutoff + FLOAT_TOLERANCE
+            ):
                 history.popleft()
             oldest = history[0]
-            if self._time_s - oldest.time_s <= self.FREEZE_WINDOW_S:
+            if not _at_least(
+                self._time_s - oldest.time_s, self.FREEZE_WINDOW_S
+            ):
                 continue
             target_translation = float(
                 np.linalg.norm(
@@ -306,15 +374,19 @@ class ValidationWatchdog:
                 oldest.measured_quaternion_wxyz,
             )
             if (
-                target_translation >= self.TRANSLATION_COMMAND_M
-                and measured_translation < self.TRANSLATION_RESPONSE_M
+                _at_least(target_translation, self.TRANSLATION_COMMAND_M)
+                and _strictly_less(
+                    measured_translation, self.TRANSLATION_RESPONSE_M
+                )
             ):
                 self._fail(
                     f"task_freeze_translation_{side_name}", sample.step
                 )
             if (
-                target_rotation >= self.ROTATION_COMMAND_RAD
-                and measured_rotation < self.ROTATION_RESPONSE_RAD
+                _at_least(target_rotation, self.ROTATION_COMMAND_RAD)
+                and _strictly_less(
+                    measured_rotation, self.ROTATION_RESPONSE_RAD
+                )
             ):
                 self._fail(
                     f"task_freeze_rotation_{side_name}", sample.step
