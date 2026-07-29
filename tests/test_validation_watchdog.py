@@ -377,3 +377,104 @@ def test_watchdog_sample_defensively_copies_and_freezes_array_payloads():
         watchdog_sample.wrist_position_rad[0] = 1.56
     with pytest.raises(ValueError):
         watchdog_sample.finite_payloads[0][0] = np.nan
+
+
+def test_inclusive_wrist_duration_does_not_round_up_a_real_shortfall():
+    snapshot = ValidationWatchdog().update(
+        sample(
+            dt_s=0.0999999995,
+            wrist_position_rad=np.array([1.56, 0.0]),
+        )
+    )
+
+    assert snapshot.passed
+
+
+def test_strict_contact_duration_fails_for_a_real_excess():
+    snapshot = ValidationWatchdog().update(
+        sample(
+            dt_s=0.1000000005,
+            contact_present=np.array([True, False]),
+        )
+    )
+
+    assert "probe_contact_loss_9" in snapshot.reasons
+
+
+def _linear_translation_snapshot(dt_s: float, updates: int):
+    watchdog = ValidationWatchdog()
+    snapshot = watchdog.snapshot()
+    for index in range(updates):
+        elapsed_s = (index + 1) * dt_s
+        target = np.zeros((2, 3))
+        target[1, 0] = 0.0009995 * elapsed_s / 0.25
+        snapshot = watchdog.update(
+            sample(
+                step=index + 1,
+                dt_s=dt_s,
+                target_position_m=target,
+            )
+        )
+    return snapshot
+
+
+def test_freeze_window_interpolates_cutoff_for_timestep_partitions():
+    partitioned_by_four_ms = _linear_translation_snapshot(0.004, 64)
+    partitioned_by_five_ms = _linear_translation_snapshot(0.005, 51)
+
+    assert partitioned_by_four_ms.reasons == partitioned_by_five_ms.reasons
+    assert partitioned_by_four_ms.passed
+
+
+def test_translation_response_below_threshold_by_more_than_ulps_freezes():
+    watchdog = ValidationWatchdog()
+    snapshot = watchdog.snapshot()
+    for index in range(6):
+        target = np.zeros((2, 3))
+        measured = np.zeros((2, 3))
+        target[1, 0] = 0.002 * index / 5
+        measured[1, 0] = 0.0000999995 * index / 5
+        snapshot = watchdog.update(
+            sample(
+                step=index,
+                dt_s=0.05,
+                target_position_m=target,
+                measured_position_m=measured,
+            )
+        )
+
+    assert "task_freeze_translation_9" in snapshot.reasons
+
+
+def test_translation_command_below_threshold_by_more_than_ulps_is_safe():
+    watchdog = ValidationWatchdog()
+    snapshot = watchdog.snapshot()
+    for index in range(6):
+        target = np.zeros((2, 3))
+        target[1, 0] = 0.0009999995 * index / 5
+        snapshot = watchdog.update(
+            sample(step=index, dt_s=0.05, target_position_m=target)
+        )
+
+    assert snapshot.passed
+
+
+def test_watchdog_sample_arrays_cannot_reenable_writes_from_their_buffers():
+    watchdog_sample = sample(
+        finite_payloads=(np.array([1.0]),),
+        contact_present=np.array([True, False]),
+    )
+    object_sample = sample(
+        finite_payloads=(np.array(["not-a-number"], dtype=object),)
+    )
+
+    for array in (
+        watchdog_sample.wrist_position_rad,
+        watchdog_sample.contact_present,
+        watchdog_sample.finite_payloads[0],
+        object_sample.finite_payloads[0],
+    ):
+        with pytest.raises(ValueError):
+            array.setflags(write=True)
+
+    assert ValidationWatchdog().update(object_sample).reasons == ("nonfinite",)
