@@ -26,6 +26,15 @@ class MetricSample:
     wrist_travel_9_rad: float
     static_drift_m: float
     references_identical: bool
+    phase_arm_travel_7_rad: float
+    phase_arm_travel_9_rad: float
+    phase_wrist_travel_9_rad: float
+    nonprobe_force_7_n: float
+    nonprobe_force_9_n: float
+    collision_stop_7: bool
+    collision_stop_9: bool
+    completed_7: bool
+    completed_9: bool
 
 
 class AcceptanceMetrics:
@@ -93,10 +102,13 @@ class AcceptanceMetrics:
         force_error_9 = max(
             abs(sample.measured_force_9 - self.force_target) for sample in self.samples
         )
+        pre_latch_red_samples = [
+            sample for sample in self.samples if not sample.collision_stop_7
+        ]
         command_error_7 = max(
             abs(sample.commanded_force_7 - self.force_target)
-            for sample in self.samples
-        )
+            for sample in pre_latch_red_samples
+        ) if pre_latch_red_samples else float("inf")
         command_error_9 = max(
             abs(sample.commanded_force_9 - self.force_target)
             for sample in self.samples
@@ -121,12 +133,14 @@ class AcceptanceMetrics:
         max_loss_7 = max(sample.contact_loss_7_s for sample in self.samples)
         max_loss_9 = max(sample.contact_loss_9_s for sample in self.samples)
         max_static_drift = max(sample.static_drift_m for sample in self.samples)
-        references_identical = all(sample.references_identical for sample in self.samples)
+        references_identical = bool(pre_latch_red_samples) and all(
+            sample.references_identical for sample in pre_latch_red_samples
+        )
         final = self.samples[-1]
 
         checks: dict[str, Any] = {
             "force_command_7": {
-                "pass": command_error_7 <= 1.0e-6,
+                "pass": bool(pre_latch_red_samples) and command_error_7 <= 1.0e-6,
                 "max_abs_error_n": command_error_7,
             },
             "force_command_9": {
@@ -212,6 +226,148 @@ class AcceptanceMetrics:
         checks["wrist_motion_9_rad"] = final.wrist_travel_9_rad
         checks["tangent_error_7_max_m"] = max_tangent_7
         checks["tangent_error_9_max_m"] = max_tangent_9
+
+        phase_samples: dict[str, list[MetricSample]] = {}
+        for sample in self.samples:
+            phase_samples.setdefault(sample.phase, []).append(sample)
+
+        def phase_accuracy(samples: list[MetricSample]) -> bool:
+            return bool(samples) and (
+                max(
+                    abs(sample.measured_force_7 - self.force_target)
+                    for sample in samples
+                )
+                <= self.force_tolerance
+                and max(
+                    abs(sample.measured_force_9 - self.force_target)
+                    for sample in samples
+                )
+                <= self.force_tolerance
+                and max(sample.orientation_error_7_deg for sample in samples)
+                <= self.orientation_error_limit_deg
+                and max(sample.orientation_error_9_deg for sample in samples)
+                <= self.orientation_error_limit_deg
+                and max(sample.tangent_error_7_m for sample in samples)
+                <= self.tangent_error_limit_m
+                and max(sample.tangent_error_9_m for sample in samples)
+                <= self.tangent_error_limit_m
+                and max(sample.contact_loss_7_s for sample in samples)
+                <= self.contact_loss_limit_s
+                and max(sample.contact_loss_9_s for sample in samples)
+                <= self.contact_loss_limit_s
+                and max(sample.nonprobe_force_7_n for sample in samples) < 2.0
+                and max(sample.nonprobe_force_9_n for sample in samples) < 2.0
+            )
+
+        def axis_comparison(phase: str) -> dict[str, Any]:
+            samples = phase_samples.get(phase, [])
+            if not samples:
+                return {
+                    "accuracy_gate": False,
+                    "reduction_percent": None,
+                    "arm_travel_7_rad": None,
+                    "arm_travel_9_rad": None,
+                    "completed": False,
+                    "commands_identical": False,
+                    "pass": False,
+                }
+            last = samples[-1]
+            axis_accuracy = phase_accuracy(samples)
+            commands_identical = all(
+                sample.references_identical
+                for sample in samples
+                if not sample.collision_stop_7
+            )
+            completed = last.completed_7 and last.completed_9
+            if axis_accuracy and last.phase_arm_travel_7_rad > 1.0e-9:
+                reduction_percent: float | None = 100.0 * (
+                    1.0
+                    - last.phase_arm_travel_9_rad / last.phase_arm_travel_7_rad
+                )
+            else:
+                reduction_percent = None
+            return {
+                "accuracy_gate": axis_accuracy,
+                "reduction_percent": reduction_percent,
+                "arm_travel_7_rad": last.phase_arm_travel_7_rad,
+                "arm_travel_9_rad": last.phase_arm_travel_9_rad,
+                "completed": completed,
+                "commands_identical": commands_identical,
+                "pass": (
+                    reduction_percent is not None
+                    and reduction_percent >= 50.0
+                    and completed
+                    and commands_identical
+                    and axis_accuracy
+                ),
+            }
+
+        pitch_comparison = axis_comparison("PITCH_ONLY")
+        yaw_comparison = axis_comparison("YAW_ONLY")
+        checks["equal_accuracy_comparison"] = {
+            "pitch": pitch_comparison,
+            "yaw": yaw_comparison,
+            "pass": pitch_comparison["pass"] and yaw_comparison["pass"],
+        }
+
+        challenge_samples = phase_samples.get("CHALLENGE_PITCH_ONLY", [])
+        if challenge_samples:
+            challenge_last = challenge_samples[-1]
+            green_completed = challenge_last.completed_9
+            green_collision_free = (
+                not any(sample.collision_stop_9 for sample in challenge_samples)
+                and max(sample.nonprobe_force_9_n for sample in challenge_samples) < 2.0
+            )
+            green_accuracy_gate = (
+                max(
+                    abs(sample.measured_force_9 - self.force_target)
+                    for sample in challenge_samples
+                )
+                <= self.force_tolerance
+                and max(
+                    sample.orientation_error_9_deg for sample in challenge_samples
+                )
+                <= self.orientation_error_limit_deg
+                and max(sample.tangent_error_9_m for sample in challenge_samples)
+                <= self.tangent_error_limit_m
+                and max(sample.contact_loss_9_s for sample in challenge_samples)
+                <= self.contact_loss_limit_s
+            )
+            red_collision_stop = any(
+                sample.collision_stop_7 for sample in challenge_samples
+            )
+            if challenge_last.phase_arm_travel_9_rad > 1.0e-9:
+                red_to_green_arm_travel_ratio: float | None = (
+                    challenge_last.phase_arm_travel_7_rad
+                    / challenge_last.phase_arm_travel_9_rad
+                )
+            else:
+                red_to_green_arm_travel_ratio = None
+        else:
+            green_completed = False
+            green_collision_free = False
+            green_accuracy_gate = False
+            red_collision_stop = False
+            red_to_green_arm_travel_ratio = None
+        checks["collision_challenge"] = {
+            "green_completed": green_completed,
+            "green_collision_free": green_collision_free,
+            "red_collision_stop": red_collision_stop,
+            "red_to_green_arm_travel_ratio": red_to_green_arm_travel_ratio,
+            "green_accuracy_gate": green_accuracy_gate,
+            "pass": (
+                green_completed
+                and green_collision_free
+                and green_accuracy_gate
+                and (
+                    red_collision_stop
+                    or (
+                        red_to_green_arm_travel_ratio is not None
+                        and red_to_green_arm_travel_ratio >= 2.0
+                    )
+                )
+            ),
+        }
         required = [
             checks["force_command_7"]["pass"],
             checks["force_command_9"]["pass"],
@@ -229,6 +385,8 @@ class AcceptanceMetrics:
             checks["scenario_complete"]["pass"],
             accuracy_gate,
             reduction_visible and reduction_percent is not None and reduction_percent > 0.0,
+            checks["equal_accuracy_comparison"]["pass"],
+            checks["collision_challenge"]["pass"],
         ]
         checks["overall_pass"] = all(required)
         checks["sample_count"] = len(self.samples)

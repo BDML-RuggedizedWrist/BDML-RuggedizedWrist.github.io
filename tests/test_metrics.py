@@ -23,13 +23,28 @@ def passing_sample(**overrides) -> MetricSample:
         "wrist_travel_9_rad": 0.5,
         "static_drift_m": 0.0,
         "references_identical": True,
+        "phase_arm_travel_7_rad": 1.0,
+        "phase_arm_travel_9_rad": 0.4,
+        "phase_wrist_travel_9_rad": 0.6,
+        "nonprobe_force_7_n": 0.0,
+        "nonprobe_force_9_n": 0.0,
+        "collision_stop_7": False,
+        "collision_stop_9": False,
+        "completed_7": True,
+        "completed_9": True,
     }
     values.update(overrides)
     return MetricSample(**values)
 
 
 def add_passing_scenario(metrics: AcceptanceMetrics, **first_overrides) -> None:
-    for phase in ("SURFACE_SCAN", "PITCH_ONLY", "RETURN_NEUTRAL", "YAW_ONLY"):
+    for phase in (
+        "SURFACE_SCAN",
+        "PITCH_ONLY",
+        "RETURN_NEUTRAL",
+        "YAW_ONLY",
+        "CHALLENGE_PITCH_ONLY",
+    ):
         metrics.add(passing_sample(phase=phase, **first_overrides))
 
 
@@ -169,3 +184,164 @@ def test_settling_restarts_when_same_phase_name_returns_later():
 
     assert len(metrics.samples) == 1
     assert metrics.samples[0].measured_force_7 == 15.0
+
+
+def test_equal_accuracy_requires_fifty_percent_reduction_in_both_axes():
+    metrics = AcceptanceMetrics(settling_samples=0)
+    metrics.add(
+        passing_sample(
+            phase="PITCH_ONLY",
+            phase_arm_travel_7_rad=1.0,
+            phase_arm_travel_9_rad=0.49,
+        )
+    )
+    metrics.add(
+        passing_sample(
+            phase="YAW_ONLY",
+            phase_arm_travel_7_rad=0.8,
+            phase_arm_travel_9_rad=0.39,
+        )
+    )
+    metrics.add(
+        passing_sample(
+            phase="CHALLENGE_PITCH_ONLY",
+            phase_arm_travel_7_rad=1.2,
+            phase_arm_travel_9_rad=0.4,
+        )
+    )
+
+    report = metrics.report(scenario_complete=True)
+
+    assert report["equal_accuracy_comparison"]["pitch"]["reduction_percent"] == pytest.approx(51.0)
+    assert report["equal_accuracy_comparison"]["yaw"]["reduction_percent"] == pytest.approx(51.25)
+    assert report["equal_accuracy_comparison"]["pass"]
+
+
+def test_reduction_is_hidden_when_accuracy_is_unequal():
+    metrics = AcceptanceMetrics(settling_samples=0)
+    metrics.add(passing_sample(phase="PITCH_ONLY", orientation_error_9_deg=6.0))
+    metrics.add(passing_sample(phase="YAW_ONLY"))
+    metrics.add(passing_sample(phase="CHALLENGE_PITCH_ONLY"))
+
+    report = metrics.report(scenario_complete=True)
+
+    assert not report["equal_accuracy_comparison"]["pitch"]["accuracy_gate"]
+    assert report["equal_accuracy_comparison"]["pitch"]["reduction_percent"] is None
+    assert not report["equal_accuracy_comparison"]["pass"]
+
+
+def test_challenge_passes_when_green_completes_and_red_collision_stops():
+    metrics = AcceptanceMetrics(settling_samples=0)
+    metrics.add(passing_sample(phase="PITCH_ONLY"))
+    metrics.add(passing_sample(phase="YAW_ONLY"))
+    metrics.add(
+        passing_sample(
+            phase="CHALLENGE_PITCH_ONLY",
+            nonprobe_force_7_n=2.4,
+            collision_stop_7=True,
+            completed_7=False,
+            completed_9=True,
+            phase_arm_travel_7_rad=0.3,
+            phase_arm_travel_9_rad=0.2,
+        )
+    )
+
+    report = metrics.report(scenario_complete=True)
+
+    assert report["collision_challenge"]["red_collision_stop"]
+    assert report["collision_challenge"]["green_completed"]
+    assert report["collision_challenge"]["pass"]
+
+
+def test_challenge_fails_if_green_collides():
+    metrics = AcceptanceMetrics(settling_samples=0)
+    metrics.add(passing_sample(phase="PITCH_ONLY"))
+    metrics.add(passing_sample(phase="YAW_ONLY"))
+    metrics.add(
+        passing_sample(
+            phase="CHALLENGE_PITCH_ONLY",
+            nonprobe_force_9_n=2.1,
+            collision_stop_9=True,
+        )
+    )
+
+    report = metrics.report(scenario_complete=True)
+
+    assert not report["collision_challenge"]["green_collision_free"]
+    assert not report["collision_challenge"]["pass"]
+    assert not report["overall_pass"]
+
+
+def test_post_latch_red_hold_is_excluded_only_from_command_and_identity_gates():
+    metrics = AcceptanceMetrics(settling_samples=0)
+    add_passing_scenario(metrics)
+    metrics.add(
+        passing_sample(
+            phase="CHALLENGE_PITCH_ONLY",
+            commanded_force_7=0.0,
+            measured_force_7=0.0,
+            references_identical=False,
+            collision_stop_7=True,
+        )
+    )
+
+    report = metrics.report(scenario_complete=True)
+
+    assert report["force_command_7"]["pass"]
+    assert report["identical_references"]["pass"]
+    assert not report["force_7"]["pass"]
+    assert not report["overall_pass"]
+
+
+def test_green_force_command_remains_exact_after_red_collision_latch():
+    metrics = AcceptanceMetrics(settling_samples=0)
+    add_passing_scenario(metrics)
+    metrics.add(
+        passing_sample(
+            phase="CHALLENGE_PITCH_ONLY",
+            commanded_force_7=0.0,
+            commanded_force_9=0.0,
+            references_identical=False,
+            collision_stop_7=True,
+        )
+    )
+
+    report = metrics.report(scenario_complete=True)
+
+    assert report["force_command_7"]["pass"]
+    assert not report["force_command_9"]["pass"]
+    assert not report["overall_pass"]
+
+
+def test_pre_latch_reference_difference_remains_disqualifying():
+    metrics = AcceptanceMetrics(settling_samples=0)
+    add_passing_scenario(metrics)
+    metrics.add(
+        passing_sample(
+            phase="CHALLENGE_PITCH_ONLY",
+            references_identical=False,
+            collision_stop_7=False,
+        )
+    )
+
+    report = metrics.report(scenario_complete=True)
+
+    assert not report["identical_references"]["pass"]
+    assert not report["overall_pass"]
+
+
+def test_missing_pre_latch_sample_cannot_satisfy_command_or_identity_gates():
+    metrics = AcceptanceMetrics(settling_samples=0)
+    metrics.add(
+        passing_sample(
+            phase="CHALLENGE_PITCH_ONLY",
+            commanded_force_7=0.0,
+            references_identical=False,
+            collision_stop_7=True,
+        )
+    )
+
+    report = metrics.report(scenario_complete=True)
+
+    assert not report["force_command_7"]["pass"]
+    assert not report["identical_references"]["pass"]
