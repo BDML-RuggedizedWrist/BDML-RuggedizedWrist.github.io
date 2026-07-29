@@ -2,7 +2,10 @@ import ast
 from dataclasses import replace
 from pathlib import Path
 
-from rizon_osc.validation_watchdog import ValidationWatchdog
+from rizon_osc.validation_watchdog import (
+    ValidationWatchdog,
+    green_safety_reasons,
+)
 
 
 RUNNER = Path(__file__).parents[1] / "scripts" / "run_osc_comparison.py"
@@ -27,9 +30,22 @@ def test_runner_uses_builtin_force_feedback_and_nullspace_interfaces():
     source = RUNNER.read_text()
 
     assert "hybrid_osc_kwargs" in source
+    assert "surface_scan_osc_kwargs" in source
     assert "current_ee_force_b=" in source
     assert "nullspace_joint_pos_target=" in source
     assert "AcceptanceMetrics(force_target=args_cli.normal_force)" in source
+
+
+def test_runner_uses_fast_scan_and_full_ninety_degree_cross_section():
+    source = RUNNER.read_text()
+
+    assert "scan_duration=2.0" in source
+    assert "settle_duration=0.25" in source
+    assert "pitch_duration=1.8" in source
+    assert "neutral_duration=1.0" in source
+    assert "yaw_duration=2.5" in source
+    assert "pitch_angle=math.radians(-35.0)" in source
+    assert "yaw_angle=math.radians(90.0)" in source
 
 
 def test_runner_uses_tutorial_profile_without_local_osc_math():
@@ -37,7 +53,8 @@ def test_runner_uses_tutorial_profile_without_local_osc_math():
 
     assert "hybrid_osc_kwargs" in source
     assert "pose_osc_kwargs" in source
-    assert "torch.cat((pose_task, wrench_task, pose_kp_task)" in source
+    assert "(pose_task, wrench_task_7, pose_kp_task)" in source
+    assert "(pose_task, wrench_task_9, pose_kp_task)" in source
     assert "torch.pinverse" not in source
     assert "torch.linalg.pinv" not in source
     assert "jacobian_b.mT @" not in source
@@ -61,21 +78,31 @@ def test_redundancy_policy_is_scheme_a_target_without_runtime_kinematics():
     assert "projector" not in source.lower()
 
 
-def test_runner_shares_pre_collision_acquisition_command_and_task_frame():
+def test_runner_shares_initial_acquisition_then_isolates_per_robot_recovery():
     source = RUNNER.read_text()
 
-    assert "shared_acquiring =" in source
-    assert "command_7 = pose_command if use_pose_osc else hybrid_command" in source
-    assert "command_9 = pose_command if use_pose_osc else hybrid_command" in source
-    assert "red_use_pose_osc = use_pose_osc or collision_7.freeze_path" in source
-    assert "osc_7 = pose_osc_7 if red_use_pose_osc else hybrid_osc_7" in source
-    assert "osc_9 = pose_osc_9 if use_pose_osc else hybrid_osc_9" in source
+    assert "initial_shared_acquiring =" in source
+    assert "red_acquiring =" in source
+    assert "green_acquiring =" in source
+    assert "hybrid_command_7 =" in source
+    assert "hybrid_command_9 =" in source
+    assert "command_7 = pose_command if red_use_pose_osc else hybrid_command_7" in source
+    assert "command_9 = pose_command if green_use_pose_osc else hybrid_command_9" in source
+    assert "reference.phase is Phase.SURFACE_SCAN" in source
+    assert "osc_7 = scan_osc_7" in source
+    assert "osc_9 = scan_osc_9" in source
     assert "task_frame_7 =" in source
     assert "task_frame_9 =" in source
     assert "torch.allclose(command_7, command_9)" in source
     assert "torch.allclose(task_frame_7, task_frame_9)" in source
-    assert "acquiring_7 =" not in source
-    assert "acquiring_9 =" not in source
+    assert "if not last_supervisor_9.freeze_path:" in source
+
+
+def test_runner_does_not_add_non_osc_wrist_damping():
+    source = RUNNER.read_text()
+
+    assert "active_wrist_ids = robot_9.find_joints" not in source
+    assert "robot_9.write_joint_damping_to_sim_index(" not in source
 
 
 def test_runner_uses_official_net_contact_force_history():
@@ -247,8 +274,10 @@ def test_runtime_audits_actual_per_side_commands_and_safety_history():
 
     assert "commanded_force_7" in source
     assert "commanded_force_9" in source
-    assert "command_7 = pose_command if use_pose_osc else hybrid_command" in source
-    assert "command_9 = pose_command if use_pose_osc else hybrid_command" in source
+    assert "wrench_task_7 = wrench_task.clone()" in source
+    assert "wrench_task_9 = wrench_task.clone()" in source
+    assert "command_7 = pose_command if red_use_pose_osc else hybrid_command_7" in source
+    assert "command_9 = pose_command if green_use_pose_osc else hybrid_command_9" in source
     assert "max_contact_loss_duration" in source
     assert "scenario_complete=" in source
 
@@ -267,7 +296,7 @@ def test_runner_integrates_phase_travel_metrics_and_persistent_hud():
     assert "phase_wrist_travel_9_rad=travel.wrist_9_rad" in source
     assert 'ui.Window("OSC 7-DoF vs 9-DoF", width=520, height=220)' in source
     assert "hud_label.text = format_hud(" in source
-    assert "last_supervisor_7.freeze_path and not collision_7.freeze_path" in source
+    assert "if not last_supervisor_9.freeze_path:" in source
 
 
 def _resolved_robot_actuator_drives(*, wrist_active: bool):
@@ -297,7 +326,7 @@ def _resolved_robot_actuator_drives(*, wrist_active: bool):
         resolve(name): {
             keyword.arg: resolve(keyword.value)
             for keyword in actuator.keywords
-            if keyword.arg in {"joint_names_expr", "stiffness", "damping"}
+            if keyword.arg in {"joint_names_expr", "armature", "stiffness", "damping"}
         }
         for name, actuator in zip(
             actuators_keyword.value.keys, actuators_keyword.value.values, strict=True
@@ -325,11 +354,19 @@ def test_effort_controlled_osc_joints_disable_implicit_drives():
 
     assert red["supplemental_wrist"] == {
         "joint_names_expr": ["wrist_.*_joint"],
+        "armature": {
+            "wrist_pitch_joint": 0.05,
+            "wrist_roll_joint": 0.02,
+        },
         "stiffness": 45.0,
         "damping": 7.0,
     }
     assert green["supplemental_wrist"] == {
         "joint_names_expr": ["wrist_.*_joint"],
+        "armature": {
+            "wrist_pitch_joint": 0.05,
+            "wrist_roll_joint": 0.02,
+        },
         "stiffness": 0.0,
         "damping": 0.0,
     }
@@ -476,7 +513,10 @@ def _load_pure_runner_function(name: str):
     ]
     assert len(functions) == 1
     function = functions[0]
-    namespace = {"ValidationWatchdog": ValidationWatchdog}
+    namespace = {
+        "ValidationWatchdog": ValidationWatchdog,
+        "green_safety_reasons": green_safety_reasons,
+    }
     exec(
         compile(
             ast.fix_missing_locations(
@@ -513,7 +553,7 @@ def test_watchdog_report_schema_and_gate_cover_early_failure():
         "thresholds": {
             "wrist_limit_margin_rad": 0.02,
             "wrist_limit_duration_s": 0.10,
-            "wrist_speed_rad_s": 1.99,
+            "wrist_speed_rad_s": 2.05,
             "wrist_speed_duration_s": 0.10,
             "contact_loss_duration_s": 0.10,
             "normal_force_limit_n": 30.0,
@@ -525,6 +565,8 @@ def test_watchdog_report_schema_and_gate_cover_early_failure():
             "rotation_response_deg": 0.05,
         },
         **snapshot.as_dict(),
+        "green_safety_reasons": [],
+        "green_safety_passed": True,
     }
     failed_snapshot = replace(
         snapshot,

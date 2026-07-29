@@ -22,7 +22,11 @@ from rizon_osc.force_control import ContactForceFilter
 from rizon_osc.hud import HudSnapshot, format_hud
 from rizon_osc.joint_travel import JointTravelTracker
 from rizon_osc.metrics import AcceptanceMetrics, MetricSample
-from rizon_osc.osc_profile import hybrid_osc_kwargs, pose_osc_kwargs
+from rizon_osc.osc_profile import (
+    hybrid_osc_kwargs,
+    pose_osc_kwargs,
+    surface_scan_osc_kwargs,
+)
 from rizon_osc.redundancy_policy import RedundancyPolicy
 from rizon_osc.scene_assets import AssetPaths
 from rizon_osc.state_machine import ContactSupervisor, phase_requires_contact
@@ -37,6 +41,7 @@ from rizon_osc.trajectory import (
 from rizon_osc.validation_watchdog import (
     ValidationWatchdog,
     WatchdogSample,
+    green_safety_reasons,
 )
 from rizon_osc.wrist_axis_precheck import stabilize_precheck_pair
 
@@ -231,6 +236,10 @@ def make_robot_cfg(root_y: float, wrist_active: bool) -> ArticulationCfg:
                 joint_names_expr=["wrist_.*_joint"],
                 effort_limit_sim=12.0,
                 velocity_limit_sim=2.0,
+                armature={
+                    "wrist_pitch_joint": 0.05,
+                    "wrist_roll_joint": 0.02,
+                },
                 stiffness=0.0 if wrist_active else 45.0,
                 damping=0.0 if wrist_active else 7.0,
             ),
@@ -363,6 +372,14 @@ def make_hybrid_osc(device: str) -> OperationalSpaceController:
     """Create Isaac Lab's closed-loop hybrid motion/force OSC."""
     cfg = OperationalSpaceControllerCfg(
         **hybrid_osc_kwargs(force_gain=args_cli.force_gain)
+    )
+    return OperationalSpaceController(cfg, num_envs=1, device=device)
+
+
+def make_surface_scan_osc(device: str) -> OperationalSpaceController:
+    """Create the official hybrid OSC with redundant probe-axis spin."""
+    cfg = OperationalSpaceControllerCfg(
+        **surface_scan_osc_kwargs(force_gain=args_cli.force_gain)
     )
     return OperationalSpaceController(cfg, num_envs=1, device=device)
 
@@ -788,9 +805,18 @@ def augment_validation_watchdog_report(
         },
         **snapshot.as_dict(),
     }
+    report["validation_watchdog"]["green_safety_reasons"] = list(
+        green_safety_reasons(snapshot.reasons)
+    )
+    report["validation_watchdog"]["green_safety_passed"] = not bool(
+        green_safety_reasons(snapshot.reasons)
+    )
     report["overall_pass"] = bool(
         report.get("overall_pass", False)
-        and (not enabled or snapshot.passed)
+        and (
+            not enabled
+            or not green_safety_reasons(snapshot.reasons)
+        )
     )
     return report
 
@@ -832,6 +858,8 @@ def run_simulator(
     pose_osc_9 = make_pose_osc(sim.device)
     hybrid_osc_7 = make_hybrid_osc(sim.device)
     hybrid_osc_9 = make_hybrid_osc(sim.device)
+    scan_osc_7 = make_surface_scan_osc(sim.device)
+    scan_osc_9 = make_surface_scan_osc(sim.device)
     dt = sim.get_physics_dt()
     watchdog_enabled = args_cli.validation_report is not None
     validation_watchdog = ValidationWatchdog()
@@ -845,10 +873,13 @@ def run_simulator(
         scan_end_xy=scan_end,
         approach_duration=1.0,
         contact_ramp_duration=1.0,
-        scan_duration=4.0,
-        pitch_duration=1.2,
-        neutral_duration=0.5,
-        yaw_duration=1.2,
+        scan_duration=2.0,
+        settle_duration=0.25,
+        pitch_duration=1.8,
+        neutral_duration=1.0,
+        yaw_duration=2.5,
+        pitch_angle=math.radians(-35.0),
+        yaw_angle=math.radians(90.0),
         approach_clearance=0.005,
         contact_preload=0.001,
         target_force=args_cli.normal_force,
@@ -1006,7 +1037,7 @@ def run_simulator(
     )
     last_supervisor_9 = last_supervisor_7
     pose_kp_task = torch.tensor(
-        [[480.0, 480.0, 360.0, 120.0, 120.0, 120.0]],
+        [[480.0, 480.0, 360.0, 240.0, 240.0, 240.0]],
         dtype=torch.float32,
         device=sim.device,
     )
@@ -1053,7 +1084,14 @@ def run_simulator(
             pose_osc_9.reset()
             hybrid_osc_7.reset()
             hybrid_osc_9.reset()
-            print(f"[PHASE] {previous_phase}")
+            scan_osc_7.reset()
+            scan_osc_9.reset()
+            q8_q9 = state_9[6][0, -2:].detach().cpu().numpy()
+            print(
+                f"[PHASE] {previous_phase} "
+                f"green_q8={math.degrees(float(q8_q9[0])):.1f}deg "
+                f"green_q9={math.degrees(float(q8_q9[1])):.1f}deg"
+            )
         green_null_target_np = policy_9.target(
             state_9[6][0].detach().cpu().numpy(),
             relative_pitch=float(reference.relative_rpy[1]),
@@ -1100,52 +1138,87 @@ def run_simulator(
             measured_force=filtered_9,
             contact_phase=contact_phase,
         )
-        if last_supervisor_7.zero_force_command or last_supervisor_9.zero_force_command:
-            wrench_task.zero_()
+        wrench_task_7 = wrench_task.clone()
+        wrench_task_9 = wrench_task.clone()
+        if last_supervisor_7.zero_force_command:
+            wrench_task_7.zero_()
+        if last_supervisor_9.zero_force_command:
+            wrench_task_9.zero_()
         pose_command = torch.cat((pose_task, pose_kp_task), dim=-1)
-        hybrid_command = torch.cat((pose_task, wrench_task, pose_kp_task), dim=-1)
+        hybrid_command_7 = torch.cat(
+            (pose_task, wrench_task_7, pose_kp_task), dim=-1
+        )
+        hybrid_command_9 = torch.cat(
+            (pose_task, wrench_task_9, pose_kp_task), dim=-1
+        )
 
-        shared_acquiring = (
+        initial_shared_acquiring = (
             reference.phase is Phase.CONTACT_RAMP
             and (filtered_7 <= 0.5 or filtered_9 <= 0.5)
-        ) or (
-            (last_supervisor_7.freeze_path and filtered_7 <= 0.5)
-            or (last_supervisor_9.freeze_path and filtered_9 <= 0.5)
         )
-        task_frame = task_frame_b
-        if shared_acquiring and reference.phase is not Phase.CONTACT_RAMP:
-            task_frame = task_frame_b.clone()
-            task_frame[:, :3] -= 0.002 * normal_b
+        red_acquiring = initial_shared_acquiring or last_supervisor_7.freeze_path
+        green_acquiring = (
+            initial_shared_acquiring or last_supervisor_9.freeze_path
+        )
+        task_frame_7 = task_frame_b
+        task_frame_9 = task_frame_b
+        if (
+            red_acquiring
+            and filtered_7 <= 0.5
+            and reference.phase is not Phase.CONTACT_RAMP
+        ):
+            task_frame_7 = task_frame_b.clone()
+            task_frame_7[:, :3] -= 0.002 * normal_b
+        if (
+            green_acquiring
+            and filtered_9 <= 0.5
+            and reference.phase is not Phase.CONTACT_RAMP
+        ):
+            task_frame_9 = task_frame_b.clone()
+            task_frame_9[:, :3] -= 0.002 * normal_b
         if not collision_7.freeze_path:
-            last_safe_red_task_frame = task_frame.clone()
+            last_safe_red_task_frame = task_frame_7.clone()
             last_safe_red_pose_task = pose_task.clone()
-        red_task_frame = (
-            last_safe_red_task_frame if collision_7.freeze_path else task_frame
+        task_frame_7 = (
+            last_safe_red_task_frame if collision_7.freeze_path else task_frame_7
         )
         red_pose_task = last_safe_red_pose_task if collision_7.freeze_path else pose_task
-        use_pose_osc = (
-            reference.phase is Phase.APPROACH or shared_acquiring
+        red_use_pose_osc = (
+            reference.phase is Phase.APPROACH
+            or red_acquiring
+            or collision_7.freeze_path
         )
-        command_7 = pose_command if use_pose_osc else hybrid_command
-        command_9 = pose_command if use_pose_osc else hybrid_command
-        task_frame_7 = red_task_frame
-        task_frame_9 = task_frame
-        red_use_pose_osc = use_pose_osc or collision_7.freeze_path
+        green_use_pose_osc = (
+            reference.phase is Phase.APPROACH or green_acquiring
+        )
+        command_7 = pose_command if red_use_pose_osc else hybrid_command_7
+        command_9 = pose_command if green_use_pose_osc else hybrid_command_9
         red_pose_command = torch.cat((red_pose_task, pose_kp_task), dim=-1)
         if collision_7.freeze_path:
             command_7 = red_pose_command
-        osc_7 = pose_osc_7 if red_use_pose_osc else hybrid_osc_7
-        osc_9 = pose_osc_9 if use_pose_osc else hybrid_osc_9
-        commanded_force = abs(float(wrench_task[0, 2].item()))
+        if red_use_pose_osc:
+            osc_7 = pose_osc_7
+        elif reference.phase is Phase.SURFACE_SCAN:
+            osc_7 = scan_osc_7
+        else:
+            osc_7 = hybrid_osc_7
+        if green_use_pose_osc:
+            osc_9 = pose_osc_9
+        elif reference.phase is Phase.SURFACE_SCAN:
+            osc_9 = scan_osc_9
+        else:
+            osc_9 = hybrid_osc_9
+        commanded_force_7_raw = abs(float(wrench_task_7[0, 2].item()))
+        commanded_force_9_raw = abs(float(wrench_task_9[0, 2].item()))
         commanded_force_7 = (
             0.0
             if red_use_pose_osc
-            else commanded_force
+            else commanded_force_7_raw
         )
         commanded_force_9 = (
             0.0
-            if use_pose_osc
-            else commanded_force
+            if green_use_pose_osc
+            else commanded_force_9_raw
         )
         actual_target_7_b = compose_task_target(task_frame_7, red_pose_task)
         actual_target_9_b = compose_task_target(task_frame_9, pose_task)
@@ -1153,7 +1226,8 @@ def run_simulator(
             references_identical = False
         else:
             references_identical = (
-                torch.allclose(command_7, command_9)
+                command_7.shape == command_9.shape
+                and torch.allclose(command_7, command_9)
                 and torch.allclose(task_frame_7, task_frame_9)
                 and not collision_7.freeze_path
             )
@@ -1281,10 +1355,7 @@ def run_simulator(
         sim.step(render=not args_cli.headless)
         scene.update(dt)
         step_count += 1
-        if not (
-            (last_supervisor_7.freeze_path and not collision_7.freeze_path)
-            or last_supervisor_9.freeze_path
-        ):
+        if not last_supervisor_9.freeze_path:
             task_time += dt
 
         post_state_7 = robot_state(robot_7, ee_7_idx, joints_7)
@@ -1445,6 +1516,8 @@ def run_simulator(
                 f"arm travel={arm_travel_7:5.2f}/{arm_travel_9:5.2f} rad "
                 f"raw reduction={raw_reduction_text} | "
                 f"wrist9={wrist_travel_9:5.2f} rad | "
+                f"q8/q9={math.degrees(float(state_9[6][0, -2].item())):+5.1f}/"
+                f"{math.degrees(float(state_9[6][0, -1].item())):+6.1f} deg | "
                 f"phase arm={travel.arm_7_rad:4.2f}/"
                 f"{travel.arm_9_rad:4.2f} wrist9={travel.wrist_9_rad:4.2f} | "
                 f"static drift={drift:.2e}"
@@ -1612,10 +1685,11 @@ def run_simulator(
                     ),
                 )
             )
-            if watchdog_snapshot.stop_requested:
+            stop_reasons = green_safety_reasons(watchdog_snapshot.reasons)
+            if stop_reasons:
                 print(
                     "[WATCHDOG] validation stopped: "
-                    + ", ".join(watchdog_snapshot.reasons)
+                    + ", ".join(stop_reasons)
                 )
                 break
 

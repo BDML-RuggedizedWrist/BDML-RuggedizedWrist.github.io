@@ -253,6 +253,22 @@ def test_challenge_passes_when_green_completes_and_red_collision_stops():
     assert report["collision_challenge"]["pass"]
 
 
+def test_challenge_completion_is_inferred_from_return_neutral():
+    """Metric cadence may first observe completion in the successor phase."""
+    metrics = AcceptanceMetrics(settling_samples=0)
+    metrics.add(
+        passing_sample(
+            phase="CHALLENGE_PITCH_ONLY",
+            completed_9=False,
+        )
+    )
+    metrics.add(passing_sample(phase="RETURN_NEUTRAL"))
+
+    challenge = metrics.report(scenario_complete=True)["collision_challenge"]
+
+    assert challenge["green_completed"]
+
+
 def test_challenge_fails_if_green_collides():
     metrics = AcceptanceMetrics(settling_samples=0)
     metrics.add(passing_sample(phase="PITCH_ONLY"))

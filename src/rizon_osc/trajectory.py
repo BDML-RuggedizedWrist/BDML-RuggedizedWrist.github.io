@@ -15,6 +15,7 @@ class Phase(str, Enum):
     APPROACH = "APPROACH"
     CONTACT_RAMP = "CONTACT_RAMP"
     SURFACE_SCAN = "SURFACE_SCAN"
+    SETTLE_AT_TARGET = "SETTLE_AT_TARGET"
     PITCH_ONLY = "PITCH_ONLY"
     RETURN_PITCH = "RETURN_PITCH"
     YAW_ONLY = "YAW_ONLY"
@@ -168,6 +169,7 @@ class SurfaceTrajectory:
         approach_duration: float = 1.0,
         contact_ramp_duration: float = 0.5,
         scan_duration: float = 4.0,
+        settle_duration: float = 0.0,
         pitch_duration: float = 1.0,
         neutral_duration: float = 0.5,
         yaw_duration: float = 1.0,
@@ -188,6 +190,7 @@ class SurfaceTrajectory:
             approach_duration,
             contact_ramp_duration,
             scan_duration,
+            settle_duration,
             pitch_duration,
             neutral_duration,
             yaw_duration,
@@ -215,6 +218,7 @@ class SurfaceTrajectory:
         self.approach_duration = float(approach_duration)
         self.contact_ramp_duration = float(contact_ramp_duration)
         self.scan_duration = float(scan_duration)
+        self.settle_duration = float(settle_duration)
         self.pitch_duration = float(pitch_duration)
         self.neutral_duration = float(neutral_duration)
         self.yaw_duration = float(yaw_duration)
@@ -233,6 +237,7 @@ class SurfaceTrajectory:
             self.approach_duration
             + self.contact_ramp_duration
             + self.scan_duration
+            + self.settle_duration
             + self.pitch_duration
             + 2.0 * self.neutral_duration
             + self.yaw_duration
@@ -246,6 +251,7 @@ class SurfaceTrajectory:
             self.approach_duration
             + self.contact_ramp_duration
             + self.scan_duration
+            + self.settle_duration
             + self.pitch_duration
             + 2.0 * self.neutral_duration
             + self.yaw_duration
@@ -349,7 +355,8 @@ class SurfaceTrajectory:
         approach_end = self.approach_duration
         ramp_end = approach_end + self.contact_ramp_duration
         scan_end = ramp_end + self.scan_duration
-        pitch_end = scan_end + self.pitch_duration
+        settle_end = scan_end + self.settle_duration
+        pitch_end = settle_end + self.pitch_duration
         return_pitch_end = pitch_end + self.neutral_duration
         yaw_end = return_pitch_end + self.yaw_duration
         return_yaw_end = yaw_end + self.neutral_duration
@@ -368,8 +375,11 @@ class SurfaceTrajectory:
         if time_seconds <= scan_end:
             u = (time_seconds - ramp_end) / self.scan_duration
             return Phase.SURFACE_SCAN, u, np.zeros(3), self.target_force
+        if self.settle_duration > 0.0 and time_seconds <= settle_end:
+            u = (time_seconds - scan_end) / self.settle_duration
+            return Phase.SETTLE_AT_TARGET, u, np.zeros(3), self.target_force
         if self.pitch_duration > 0.0 and time_seconds <= pitch_end:
-            u = (time_seconds - scan_end) / self.pitch_duration
+            u = (time_seconds - settle_end) / self.pitch_duration
             progress, _, _ = quintic_progress(u)
             return (
                 Phase.PITCH_ONLY,

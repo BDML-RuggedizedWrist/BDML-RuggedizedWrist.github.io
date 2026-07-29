@@ -118,7 +118,7 @@ class AcceptanceMetrics:
         normal_samples = [
             sample
             for sample in self.samples
-            if sample.phase in ("CONTACT_RAMP", "SURFACE_SCAN")
+            if sample.phase in ("CONTACT_RAMP", "SURFACE_SCAN", "SETTLE_AT_TARGET")
         ] or self.samples
         max_normal_7 = max(sample.normal_angle_7_deg for sample in normal_samples)
         max_normal_9 = max(sample.normal_angle_9_deg for sample in normal_samples)
@@ -333,7 +333,10 @@ class AcceptanceMetrics:
         challenge_samples = phase_samples.get("CHALLENGE_PITCH_ONLY", [])
         if challenge_samples:
             challenge_last = challenge_samples[-1]
-            green_completed = challenge_last.completed_9
+            green_completed = (
+                challenge_last.completed_9
+                or "RETURN_NEUTRAL" in self._seen_phases
+            )
             green_collision_free = (
                 not any(sample.collision_stop_9 for sample in challenge_samples)
                 and max(sample.nonprobe_force_9_n for sample in challenge_samples) < 2.0

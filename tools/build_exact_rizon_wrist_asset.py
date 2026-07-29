@@ -266,7 +266,7 @@ def main() -> None:
         (-2.29851e-16, 0.0324, 0.0605),
         (1.0, 0.0, 0.0, 0.0),
         "Y",
-        (-65.0, 65.0),
+        (-90.0, 90.0),
     )
     add_revolute_joint(
         stage,
@@ -276,7 +276,7 @@ def main() -> None:
         TOOL_ROLL_POS_IN_PITCH,
         ROLL_JOINT_ROT0,
         "Z",
-        (-90.0, 90.0),
+        (-180.0, 180.0),
         ROLL_JOINT_ROT1,
     )
     # Flip the probe at its mount so its acoustic face points along the

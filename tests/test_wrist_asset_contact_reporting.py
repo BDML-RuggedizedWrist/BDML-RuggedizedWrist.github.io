@@ -19,6 +19,7 @@ CONTACT_REPORT_BODIES = (
     "/Rizon4s/flange/wrist_base/wrist_pitch_link/probe_roll_output/linear_probe",
 )
 ROLL_OUTPUT = CONTACT_REPORT_BODIES[2]
+PITCH_JOINT = "/Rizon4s/joints/wrist_pitch_joint"
 ROLL_JOINT = "/Rizon4s/joints/wrist_roll_joint"
 
 
@@ -79,6 +80,8 @@ def test_roll_joint_reverses_local_z_without_changing_its_zero_pose(tmp_path: Pa
     stage = Usd.Stage.Open(str(output))
     joint = stage.GetPrimAtPath(ROLL_JOINT)
 
+    assert joint.GetAttribute("physics:lowerLimit").Get() == pytest.approx(-180.0)
+    assert joint.GetAttribute("physics:upperLimit").Get() == pytest.approx(180.0)
     assert _vec_components(joint.GetAttribute("physics:localPos0").Get()) == pytest.approx(
         (-0.0011588743, -0.0316500, 0.0121950452)
     )
@@ -105,3 +108,18 @@ def test_roll_joint_reverses_local_z_without_changing_its_zero_pose(tmp_path: Pa
         0.9955142047480071, -2.528205641017351e-7, 0.09461219871073102, 0.0,
         0.25714501602650425, -0.11225006888928585, 1.2561588694660617, 1.0,
     ))
+
+
+def test_pitch_joint_has_ninety_degree_scan_margin(tmp_path: Path):
+    output = tmp_path / "rizon_wrist.usda"
+    subprocess.run(
+        [sys.executable, str(BUILDER), "--output", str(output)],
+        check=True,
+        cwd=PROJECT_ROOT,
+    )
+
+    stage = Usd.Stage.Open(str(output))
+    joint = stage.GetPrimAtPath(PITCH_JOINT)
+
+    assert joint.GetAttribute("physics:lowerLimit").Get() == pytest.approx(-90.0)
+    assert joint.GetAttribute("physics:upperLimit").Get() == pytest.approx(90.0)

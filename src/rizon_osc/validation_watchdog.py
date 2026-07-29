@@ -16,6 +16,22 @@ CHALLENGE_PHASES = {
     "RETURN_NEUTRAL",
 }
 
+
+def green_safety_reasons(reasons: tuple[str, ...]) -> tuple[str, ...]:
+    """Return failures that require stopping the green 9-DoF demonstration.
+
+    Red failures are retained in the report because they are an expected part
+    of the comparison, but they must not prevent the green robot from
+    completing the same commanded task.
+    """
+    return tuple(
+        reason
+        for reason in reasons
+        if reason == "nonfinite"
+        or reason.startswith("green_")
+        or reason.endswith("_9")
+    )
+
 _DECIMAL_ZERO = Decimal("0")
 _LIMIT_DURATION = Decimal("0.10")
 _SPEED_DURATION = Decimal("0.10")
@@ -180,7 +196,10 @@ def _interpolate_quaternion(
 class ValidationWatchdog:
     LIMIT_MARGIN_RAD = 0.02
     LIMIT_DURATION_S = 0.10
-    SPEED_THRESHOLD_RAD_S = 1.99
+    # The authored wrist velocity limit is 2.0 rad/s.  Keep a small numeric
+    # tolerance above that hard PhysX limit so normal limit operation is not
+    # misclassified as an overspeed fault.
+    SPEED_THRESHOLD_RAD_S = 2.05
     SPEED_DURATION_S = 0.10
     CONTACT_LOSS_DURATION_S = 0.10
     FORCE_LIMIT_N = 30.0

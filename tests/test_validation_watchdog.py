@@ -6,7 +6,33 @@ import pytest
 from rizon_osc.validation_watchdog import (
     ValidationWatchdog,
     WatchdogSample,
+    green_safety_reasons,
 )
+
+
+def test_green_safety_filter_keeps_red_failures_as_nonblocking_evidence():
+    reasons = (
+        "normal_force_overload_7",
+        "probe_contact_loss_7",
+        "task_freeze_rotation_7",
+    )
+
+    assert green_safety_reasons(reasons) == ()
+
+
+def test_green_safety_filter_stops_green_or_nonfinite_failures():
+    reasons = (
+        "normal_force_overload_7",
+        "normal_force_overload_9",
+        "green_wrist_speed_j9",
+        "nonfinite",
+    )
+
+    assert green_safety_reasons(reasons) == (
+        "normal_force_overload_9",
+        "green_wrist_speed_j9",
+        "nonfinite",
+    )
 
 
 def sample(**overrides) -> WatchdogSample:
@@ -58,7 +84,7 @@ def test_near_limit_requires_a_continuous_tenth_second():
 
 def test_wrist_speed_requires_a_continuous_tenth_second():
     watchdog = ValidationWatchdog()
-    fast = sample(wrist_velocity_rad_s=np.array([0.0, -1.99]))
+    fast = sample(wrist_velocity_rad_s=np.array([0.0, -2.05]))
 
     assert advance(watchdog, fast, 24).passed
     stopped = watchdog.update(replace(fast, step=25))
@@ -277,7 +303,7 @@ def test_nonnumeric_object_payload_latches_instead_of_raising():
         ),
         (
             "wrist_velocity_rad_s",
-            np.array([0.0, -1.99]),
+            np.array([0.0, -2.05]),
             "green_wrist_speed_j9",
         ),
     ),

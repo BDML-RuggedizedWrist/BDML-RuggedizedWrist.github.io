@@ -7,7 +7,7 @@ def _common_kwargs() -> dict[str, object]:
     return {
         "impedance_mode": "variable_kp",
         "inertial_dynamics_decoupling": True,
-        "partial_inertial_dynamics_decoupling": False,
+        "partial_inertial_dynamics_decoupling": True,
         "gravity_compensation": True,
         "motion_damping_ratio_task": 1.0,
         "nullspace_control": "position",
@@ -17,6 +17,7 @@ def _common_kwargs() -> dict[str, object]:
 
 
 def pose_osc_kwargs() -> dict[str, object]:
+    """Full-pose OSC used before contact and by the collision freeze path."""
     return {
         **_common_kwargs(),
         "target_types": ["pose_abs"],
@@ -38,6 +39,13 @@ def hybrid_osc_kwargs(force_gain: float) -> dict[str, object]:
             0.0,
             0.0,
         ],
+    }
+
+
+def surface_scan_osc_kwargs(force_gain: float) -> dict[str, object]:
+    """Full hybrid OSC for surface scanning."""
+    return {
+        **hybrid_osc_kwargs(force_gain),
     }
 
 

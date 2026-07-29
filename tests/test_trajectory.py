@@ -157,6 +157,33 @@ def test_fixed_contact_orientation_changes_one_axis_at_a_time(curved_surface):
     assert pitch.contact_point == pytest.approx(yaw.contact_point)
 
 
+def test_settle_at_scan_target_holds_pose_and_force_before_pitch(curved_surface):
+    trajectory = SurfaceTrajectory(
+        curved_surface,
+        scan_start_xy=(0.0, 0.02),
+        scan_end_xy=(0.0, 0.18),
+        approach_duration=0.2,
+        contact_ramp_duration=0.5,
+        scan_duration=2.0,
+        settle_duration=1.0,
+        pitch_duration=1.0,
+        target_force=15.0,
+    )
+
+    settle = trajectory.reference(0.2 + 0.5 + 2.0 + 0.5)
+    pitch = trajectory.reference(0.2 + 0.5 + 2.0 + 1.0 + 0.5)
+
+    assert settle.phase is Phase.SETTLE_AT_TARGET
+    assert settle.contact_point[:2] == pytest.approx((0.0, 0.18))
+    assert settle.relative_rpy == pytest.approx(np.zeros(3))
+    assert settle.normal_force == pytest.approx(15.0)
+    assert np.linalg.norm(settle.linear_velocity) == pytest.approx(0.0, abs=1e-8)
+    assert np.linalg.norm(settle.angular_velocity) == pytest.approx(0.0, abs=1e-8)
+    assert pitch.phase is Phase.PITCH_ONLY
+    assert pitch.contact_point == pytest.approx(settle.contact_point)
+    assert abs(pitch.relative_rpy[1]) > 0.1
+
+
 @pytest.mark.parametrize(
     "time_seconds",
     (0.0, 1.25, 4.0, 6.1, 7.8, 10.5),
