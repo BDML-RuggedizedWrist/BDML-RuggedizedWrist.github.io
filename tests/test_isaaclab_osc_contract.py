@@ -261,3 +261,39 @@ def test_phase_changes_do_not_recapture_the_run_initial_wrist():
 
     assert "policy_9.begin_phase(" in phase_block
     assert "initialize_run(" not in phase_block
+
+
+def test_runner_integrates_pure_validation_watchdog_after_physics_step():
+    source = RUNNER.read_text()
+
+    assert "from rizon_osc.validation_watchdog import (" in source
+    assert "ValidationWatchdog" in source
+    assert "WatchdogSample" in source
+    assert "validation_watchdog.update(" in source
+    assert source.rindex("post_state_9 = robot_state(") < source.index(
+        "validation_watchdog.update("
+    )
+    assert 'report["validation_watchdog"] =' in source
+    assert 'report["overall_pass"] = bool(' in source
+
+
+def test_watchdog_does_not_change_official_osc_torque_boundary():
+    module = ast.parse(RUNNER.read_text())
+    run_simulator = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_simulator"
+    )
+    watchdog_calls = [
+        node
+        for node in ast.walk(run_simulator)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "update"
+        and ast.unparse(node.func.value) == "validation_watchdog"
+    ]
+
+    assert len(watchdog_calls) == 1
+    assert "torque_7 =" not in ast.unparse(watchdog_calls[0])
+    assert "torque_9 =" not in ast.unparse(watchdog_calls[0])
+    assert "set_joint_effort_target" not in ast.unparse(watchdog_calls[0])

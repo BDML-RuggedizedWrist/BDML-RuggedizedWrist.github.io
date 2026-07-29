@@ -33,6 +33,10 @@ from rizon_osc.trajectory import (
     quaternion_from_rotation_matrix,
     split_task_frame_rotation,
 )
+from rizon_osc.validation_watchdog import (
+    ValidationWatchdog,
+    WatchdogSample,
+)
 
 from isaaclab.app import AppLauncher
 
@@ -721,6 +725,12 @@ def run_simulator(
     joints_7 = robot_7.find_joints("joint[1-7]")[0]
     joints_9 = robot_9.find_joints(["joint[1-7]", "wrist_.*_joint"])[0]
     locked_wrist_ids = robot_7.find_joints("wrist_.*_joint")[0]
+    wrist_limits_9 = (
+        robot_9.data.joint_pos_limits.torch[0, joints_9[-2:], :]
+        .detach()
+        .cpu()
+        .numpy()
+    )
 
     print("[INFO] Controller: isaaclab.controllers.OperationalSpaceController")
     print("[INFO] Contact control: built-in current_ee_force_b feedback")
@@ -843,6 +853,10 @@ def run_simulator(
     collision_monitor_9 = CollisionMonitor()
     metrics = AcceptanceMetrics(force_target=args_cli.normal_force)
     travel_tracker = JointTravelTracker()
+    watchdog_enabled = args_cli.validation_report is not None
+    validation_watchdog = ValidationWatchdog()
+    watchdog_snapshot = validation_watchdog.snapshot()
+    latest_metric_values = np.empty(0, dtype=np.float64)
     hud_window = None
     hud_label = None
     if not args_cli.headless:
@@ -1314,6 +1328,130 @@ def run_simulator(
                 f"{travel.arm_9_rad:4.2f} wrist9={travel.wrist_9_rad:4.2f} | "
                 f"static drift={drift:.2e}"
             )
+            latest_metric_values = np.asarray(
+                [
+                    tangent_error_7,
+                    tangent_error_9,
+                    normal_position_error_7,
+                    normal_position_error_9,
+                    normal_velocity_7,
+                    normal_velocity_9,
+                    orientation_error_7_deg,
+                    orientation_error_9_deg,
+                    angle_7,
+                    angle_9,
+                    drift,
+                    travel.arm_7_rad,
+                    travel.arm_9_rad,
+                    travel.wrist_9_rad,
+                ],
+                dtype=np.float64,
+            )
+
+        if watchdog_enabled:
+            finite_payloads = tuple(
+                tensor.detach().cpu().numpy()
+                for tensor in (
+                    *state_7,
+                    *state_9,
+                    *post_state_7,
+                    *post_state_9,
+                    command_7,
+                    command_9,
+                    torque_7,
+                    torque_9,
+                    applied_7,
+                    applied_9,
+                )
+            )
+            watchdog_snapshot = validation_watchdog.update(
+                WatchdogSample(
+                    step=step_count,
+                    dt_s=dt,
+                    phase=reference.phase.value,
+                    wrist_position_rad=post_state_9[6][0, 7:]
+                    .detach()
+                    .cpu()
+                    .numpy(),
+                    wrist_velocity_rad_s=post_state_9[7][0, 7:]
+                    .detach()
+                    .cpu()
+                    .numpy(),
+                    wrist_limits_rad=wrist_limits_9,
+                    contact_required=phase_requires_contact(
+                        reference.phase.value
+                    ),
+                    contact_present=np.array(
+                        [filtered_7 > 0.5, filtered_9 > 0.5],
+                        dtype=bool,
+                    ),
+                    measured_normal_force_n=np.array(
+                        [filtered_7, filtered_9], dtype=np.float64
+                    ),
+                    nonprobe_force_n=np.array(
+                        [
+                            collision_7.current_force_n,
+                            collision_9.current_force_n,
+                        ],
+                        dtype=np.float64,
+                    ),
+                    red_collision_stop=collision_7.freeze_path,
+                    target_position_m=np.stack(
+                        (
+                            actual_target_7_b[0, :3].detach().cpu().numpy(),
+                            actual_target_9_b[0, :3].detach().cpu().numpy(),
+                        )
+                    ),
+                    measured_position_m=np.stack(
+                        (
+                            post_state_7[3][0, :3].detach().cpu().numpy(),
+                            post_state_9[3][0, :3].detach().cpu().numpy(),
+                        )
+                    ),
+                    target_quaternion_wxyz=np.stack(
+                        (
+                            actual_target_7_b[0, 3:7]
+                            .detach()
+                            .cpu()
+                            .numpy(),
+                            actual_target_9_b[0, 3:7]
+                            .detach()
+                            .cpu()
+                            .numpy(),
+                        )
+                    ),
+                    measured_quaternion_wxyz=np.stack(
+                        (
+                            post_state_7[3][0, 3:7]
+                            .detach()
+                            .cpu()
+                            .numpy(),
+                            post_state_9[3][0, 3:7]
+                            .detach()
+                            .cpu()
+                            .numpy(),
+                        )
+                    ),
+                    finite_payloads=finite_payloads
+                    + (
+                        np.asarray(
+                            [
+                                filtered_7,
+                                filtered_9,
+                                collision_7.current_force_n,
+                                collision_9.current_force_n,
+                            ]
+                        ),
+                        latest_metric_values,
+                    ),
+                )
+            )
+            if watchdog_snapshot.stop_requested:
+                print(
+                    "[WATCHDOG] validation stopped: "
+                    + ", ".join(watchdog_snapshot.reasons)
+                )
+                break
 
         if args_cli.max_steps > 0 and step_count >= args_cli.max_steps:
             break
@@ -1328,6 +1466,37 @@ def run_simulator(
     report["normal_force_target_n"] = args_cli.normal_force
     report["scenario_total_duration_s"] = trajectory.total_duration
     report["wrist_axis_check"] = asdict(wrist_axis_check)
+    watchdog_report = {
+        "enabled": watchdog_enabled,
+        "thresholds": {
+            "wrist_limit_margin_rad": ValidationWatchdog.LIMIT_MARGIN_RAD,
+            "wrist_limit_duration_s": ValidationWatchdog.LIMIT_DURATION_S,
+            "wrist_speed_rad_s": ValidationWatchdog.SPEED_THRESHOLD_RAD_S,
+            "wrist_speed_duration_s": ValidationWatchdog.SPEED_DURATION_S,
+            "contact_loss_duration_s": (
+                ValidationWatchdog.CONTACT_LOSS_DURATION_S
+            ),
+            "normal_force_limit_n": ValidationWatchdog.FORCE_LIMIT_N,
+            "nonprobe_collision_n": (
+                ValidationWatchdog.NONPROBE_COLLISION_N
+            ),
+            "freeze_window_s": ValidationWatchdog.FREEZE_WINDOW_S,
+            "translation_command_m": (
+                ValidationWatchdog.TRANSLATION_COMMAND_M
+            ),
+            "translation_response_m": (
+                ValidationWatchdog.TRANSLATION_RESPONSE_M
+            ),
+            "rotation_command_deg": 0.5,
+            "rotation_response_deg": 0.05,
+        },
+        **watchdog_snapshot.as_dict(),
+    }
+    report["validation_watchdog"] = watchdog_report
+    report["overall_pass"] = bool(
+        report.get("overall_pass", False)
+        and (not watchdog_enabled or watchdog_snapshot.passed)
+    )
     return report
 
 
