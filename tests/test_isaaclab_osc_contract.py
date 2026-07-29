@@ -449,3 +449,126 @@ def test_watchdog_report_schema_and_gate_cover_early_failure():
     )[1].split("state_7 = robot_state(", maxsplit=1)[0]
     assert "return augment_validation_watchdog_report(" in early_path
     assert source.count("return augment_validation_watchdog_report(") == 2
+
+
+def test_validation_owns_separate_nonprobe_contact_sensors():
+    module = ast.parse(RUNNER.read_text())
+    main = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "main"
+    )
+    assignments = {
+        target.id: node.value
+        for node in ast.walk(main)
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+
+    for side in ("7", "9"):
+        main_name = f"collision_sensors_{side}"
+        watchdog_name = f"watchdog_collision_sensors_{side}"
+        assert main_name in assignments
+        assert watchdog_name in assignments
+        main_value = assignments[main_name]
+        watchdog_value = assignments[watchdog_name]
+
+        assert isinstance(main_value, ast.Call)
+        assert ast.unparse(main_value.func) == "make_patient_collision_sensors"
+        assert ast.literal_eval(main_value.args[0]) == side
+        assert isinstance(watchdog_value, ast.IfExp)
+        assert ast.unparse(watchdog_value.test) == (
+            "args_cli.validation_report is not None"
+        )
+        assert ast.unparse(watchdog_value.body.func) == (
+            "make_patient_collision_sensors"
+        )
+        assert ast.literal_eval(watchdog_value.body.args[0]) == side
+        assert isinstance(watchdog_value.orelse, ast.List)
+        assert watchdog_value.orelse.elts == []
+
+    sensor_factories = [
+        node
+        for node in ast.walk(main)
+        if isinstance(node, ast.Call)
+        and ast.unparse(node.func) == "make_patient_collision_sensors"
+    ]
+    assert len(sensor_factories) == 4
+
+    run_call = next(
+        node
+        for node in ast.walk(main)
+        if isinstance(node, ast.Call)
+        and ast.unparse(node.func) == "run_simulator"
+    )
+    run_keywords = {
+        keyword.arg: ast.unparse(keyword.value)
+        for keyword in run_call.keywords
+    }
+    assert run_keywords["collision_sensors_7"] == "collision_sensors_7"
+    assert run_keywords["collision_sensors_9"] == "collision_sensors_9"
+    assert run_keywords["watchdog_collision_sensors_7"] == (
+        "watchdog_collision_sensors_7"
+    )
+    assert run_keywords["watchdog_collision_sensors_9"] == (
+        "watchdog_collision_sensors_9"
+    )
+
+
+def test_watchdog_nonprobe_sensor_updates_are_isolated_and_same_step():
+    module = ast.parse(RUNNER.read_text())
+    run_simulator = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_simulator"
+    )
+    parameter_names = {
+        argument.arg for argument in run_simulator.args.kwonlyargs
+    }
+    assert {
+        "collision_sensors_7",
+        "collision_sensors_9",
+        "watchdog_collision_sensors_7",
+        "watchdog_collision_sensors_9",
+    } <= parameter_names
+
+    nonprobe_calls = [
+        node
+        for node in ast.walk(run_simulator)
+        if isinstance(node, ast.Call)
+        and ast.unparse(node.func) == "maximum_patient_contact_force"
+    ]
+    sensor_arguments = [ast.unparse(node.args[0]) for node in nonprobe_calls]
+    assert sensor_arguments.count("collision_sensors_7") == 1
+    assert sensor_arguments.count("collision_sensors_9") == 1
+    assert sensor_arguments.count("watchdog_collision_sensors_7") == 1
+    assert sensor_arguments.count("watchdog_collision_sensors_9") == 1
+
+    watchdog_sample = next(
+        node
+        for node in ast.walk(run_simulator)
+        if isinstance(node, ast.Call)
+        and ast.unparse(node.func) == "WatchdogSample"
+    )
+    red_collision_stop = next(
+        keyword.value
+        for keyword in watchdog_sample.keywords
+        if keyword.arg == "red_collision_stop"
+    )
+    assert isinstance(red_collision_stop, ast.BoolOp)
+    assert isinstance(red_collision_stop.op, ast.Or)
+    assert ast.unparse(red_collision_stop.values[0]) == (
+        "collision_7.freeze_path"
+    )
+    same_step_collision = red_collision_stop.values[1]
+    assert isinstance(same_step_collision, ast.BoolOp)
+    assert isinstance(same_step_collision.op, ast.And)
+    assert ast.unparse(same_step_collision.values[0]) == (
+        "reference.phase in "
+        "(Phase.CHALLENGE_TRANSIT, Phase.CHALLENGE_PITCH_ONLY, "
+        "Phase.RETURN_NEUTRAL)"
+    )
+    assert ast.unparse(same_step_collision.values[1]) == (
+        "post_nonprobe_7 >= ValidationWatchdog.NONPROBE_COLLISION_N"
+    )

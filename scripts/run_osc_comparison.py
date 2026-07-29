@@ -755,6 +755,8 @@ def run_simulator(
     *,
     collision_sensors_7: list[ContactSensor],
     collision_sensors_9: list[ContactSensor],
+    watchdog_collision_sensors_7: list[ContactSensor],
+    watchdog_collision_sensors_9: list[ContactSensor],
 ) -> dict:
     robot_7: Articulation = scene["robot_7dof"]
     robot_9: Articulation = scene["robot_9dof"]
@@ -1427,10 +1429,10 @@ def run_simulator(
                 post_measured_force_9
             ).filtered
             post_nonprobe_7 = maximum_patient_contact_force(
-                collision_sensors_7, dt
+                watchdog_collision_sensors_7, dt
             )
             post_nonprobe_9 = maximum_patient_contact_force(
-                collision_sensors_9, dt
+                watchdog_collision_sensors_9, dt
             )
             finite_payloads = tuple(
                 tensor.detach().cpu().numpy()
@@ -1479,7 +1481,19 @@ def run_simulator(
                         [post_nonprobe_7, post_nonprobe_9],
                         dtype=np.float64,
                     ),
-                    red_collision_stop=collision_7.freeze_path,
+                    red_collision_stop=(
+                        collision_7.freeze_path
+                        or (
+                            reference.phase
+                            in (
+                                Phase.CHALLENGE_TRANSIT,
+                                Phase.CHALLENGE_PITCH_ONLY,
+                                Phase.RETURN_NEUTRAL,
+                            )
+                            and post_nonprobe_7
+                            >= ValidationWatchdog.NONPROBE_COLLISION_N
+                        )
+                    ),
                     target_position_m=np.stack(
                         (
                             actual_target_7_b[0, :3].detach().cpu().numpy(),
@@ -1580,6 +1594,16 @@ def main() -> int:
     scene = InteractiveScene(ComparisonSceneCfg(num_envs=1, env_spacing=3.0))
     collision_sensors_7 = make_patient_collision_sensors("7")
     collision_sensors_9 = make_patient_collision_sensors("9")
+    watchdog_collision_sensors_7 = (
+        make_patient_collision_sensors("7")
+        if args_cli.validation_report is not None
+        else []
+    )
+    watchdog_collision_sensors_9 = (
+        make_patient_collision_sensors("9")
+        if args_cli.validation_report is not None
+        else []
+    )
     sim.reset()
     scene.update(sim.get_physics_dt())
     print("[INFO] Fixed Assembly3 scene ready.")
@@ -1589,6 +1613,8 @@ def main() -> int:
         surface,
         collision_sensors_7=collision_sensors_7,
         collision_sensors_9=collision_sensors_9,
+        watchdog_collision_sensors_7=watchdog_collision_sensors_7,
+        watchdog_collision_sensors_9=watchdog_collision_sensors_9,
     )
     if args_cli.validation_report is not None:
         target = args_cli.validation_report.expanduser()
