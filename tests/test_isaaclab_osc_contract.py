@@ -1,5 +1,8 @@
 import ast
+from dataclasses import replace
 from pathlib import Path
+
+from rizon_osc.validation_watchdog import ValidationWatchdog
 
 
 RUNNER = Path(__file__).parents[1] / "scripts" / "run_osc_comparison.py"
@@ -297,3 +300,152 @@ def test_watchdog_does_not_change_official_osc_torque_boundary():
     assert "torque_7 =" not in ast.unparse(watchdog_calls[0])
     assert "torque_9 =" not in ast.unparse(watchdog_calls[0])
     assert "set_joint_effort_target" not in ast.unparse(watchdog_calls[0])
+
+
+def test_watchdog_uses_fresh_post_step_sensor_evidence():
+    source = RUNNER.read_text()
+    loop_source = source.split(
+        "while simulation_app.is_running():", maxsplit=1
+    )[1]
+
+    physics_step = loop_source.index(
+        "sim.step(render=not args_cli.headless)"
+    )
+    scene_update = loop_source.index("scene.update(dt)", physics_step)
+    assert "post_reaction_7_w =" in loop_source
+    assert "post_nonprobe_7 =" in loop_source
+    post_reaction = loop_source.index("post_reaction_7_w =")
+    post_nonprobe = loop_source.index("post_nonprobe_7 =")
+    watchdog_update = loop_source.index("validation_watchdog.update(")
+    max_steps = loop_source.index("if args_cli.max_steps > 0")
+    assert (
+        physics_step
+        < scene_update
+        < post_reaction
+        < post_nonprobe
+        < watchdog_update
+        < max_steps
+    )
+
+    module = ast.parse(source)
+    run_simulator = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_simulator"
+    )
+    calls = [node for node in ast.walk(run_simulator) if isinstance(node, ast.Call)]
+    call_targets = [ast.unparse(node.func) for node in calls]
+    assert call_targets.count("force_filter_7.update") == 1
+    assert call_targets.count("force_filter_9.update") == 1
+    assert call_targets.count("watchdog_force_filter_7.update") == 1
+    assert call_targets.count("watchdog_force_filter_9.update") == 1
+    assert call_targets.count("collision_monitor_7.update") == 1
+    assert call_targets.count("collision_monitor_9.update") == 1
+
+    watchdog_call = next(
+        node
+        for node in calls
+        if ast.unparse(node.func) == "validation_watchdog.update"
+    )
+    sample_names = {
+        node.id for node in ast.walk(watchdog_call) if isinstance(node, ast.Name)
+    }
+    assert {
+        "watchdog_filtered_7",
+        "watchdog_filtered_9",
+        "post_nonprobe_7",
+        "post_nonprobe_9",
+    } <= sample_names
+    assert "filtered_7" not in sample_names
+    assert "filtered_9" not in sample_names
+
+
+def _load_pure_runner_function(name: str):
+    module = ast.parse(RUNNER.read_text())
+    functions = [
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == name
+    ]
+    assert len(functions) == 1
+    function = functions[0]
+    namespace = {"ValidationWatchdog": ValidationWatchdog}
+    exec(
+        compile(
+            ast.fix_missing_locations(
+                ast.Module(body=[function], type_ignores=[])
+            ),
+            str(RUNNER),
+            "exec",
+        ),
+        namespace,
+    )
+    return namespace[name]
+
+
+def test_watchdog_report_schema_and_gate_cover_early_failure():
+    augment_report = _load_pure_runner_function(
+        "augment_validation_watchdog_report"
+    )
+    snapshot = ValidationWatchdog().snapshot()
+    early_report = {
+        "overall_pass": False,
+        "reason": "authored wrist-axis sign verification failed",
+    }
+
+    result = augment_report(
+        early_report,
+        enabled=True,
+        snapshot=snapshot,
+    )
+
+    assert result is early_report
+    assert result["overall_pass"] is False
+    assert result["validation_watchdog"] == {
+        "enabled": True,
+        "thresholds": {
+            "wrist_limit_margin_rad": 0.02,
+            "wrist_limit_duration_s": 0.10,
+            "wrist_speed_rad_s": 1.99,
+            "wrist_speed_duration_s": 0.10,
+            "contact_loss_duration_s": 0.10,
+            "normal_force_limit_n": 30.0,
+            "nonprobe_collision_n": 2.0,
+            "freeze_window_s": 0.25,
+            "translation_command_m": 0.001,
+            "translation_response_m": 0.0001,
+            "rotation_command_deg": 0.5,
+            "rotation_response_deg": 0.05,
+        },
+        **snapshot.as_dict(),
+    }
+    failed_snapshot = replace(
+        snapshot,
+        passed=False,
+        stop_requested=True,
+        reasons=("nonfinite",),
+        first_failure_step=1,
+    )
+    assert (
+        augment_report(
+            {"overall_pass": True},
+            enabled=True,
+            snapshot=failed_snapshot,
+        )["overall_pass"]
+        is False
+    )
+    assert (
+        augment_report(
+            {"overall_pass": True},
+            enabled=False,
+            snapshot=failed_snapshot,
+        )["overall_pass"]
+        is True
+    )
+
+    source = RUNNER.read_text()
+    early_path = source.split(
+        "if not wrist_axis_check.passed:", maxsplit=1
+    )[1].split("state_7 = robot_state(", maxsplit=1)[0]
+    assert "return augment_validation_watchdog_report(" in early_path
+    assert source.count("return augment_validation_watchdog_report(") == 2

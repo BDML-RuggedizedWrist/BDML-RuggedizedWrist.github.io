@@ -708,6 +708,46 @@ def create_markers() -> dict[str, VisualizationMarkers]:
     }
 
 
+def augment_validation_watchdog_report(
+    report: dict,
+    *,
+    enabled: bool,
+    snapshot,
+) -> dict:
+    """Attach the pure watchdog schema and apply its validation gate."""
+    report["validation_watchdog"] = {
+        "enabled": enabled,
+        "thresholds": {
+            "wrist_limit_margin_rad": ValidationWatchdog.LIMIT_MARGIN_RAD,
+            "wrist_limit_duration_s": ValidationWatchdog.LIMIT_DURATION_S,
+            "wrist_speed_rad_s": ValidationWatchdog.SPEED_THRESHOLD_RAD_S,
+            "wrist_speed_duration_s": ValidationWatchdog.SPEED_DURATION_S,
+            "contact_loss_duration_s": (
+                ValidationWatchdog.CONTACT_LOSS_DURATION_S
+            ),
+            "normal_force_limit_n": ValidationWatchdog.FORCE_LIMIT_N,
+            "nonprobe_collision_n": (
+                ValidationWatchdog.NONPROBE_COLLISION_N
+            ),
+            "freeze_window_s": ValidationWatchdog.FREEZE_WINDOW_S,
+            "translation_command_m": (
+                ValidationWatchdog.TRANSLATION_COMMAND_M
+            ),
+            "translation_response_m": (
+                ValidationWatchdog.TRANSLATION_RESPONSE_M
+            ),
+            "rotation_command_deg": 0.5,
+            "rotation_response_deg": 0.05,
+        },
+        **snapshot.as_dict(),
+    }
+    report["overall_pass"] = bool(
+        report.get("overall_pass", False)
+        and (not enabled or snapshot.passed)
+    )
+    return report
+
+
 def run_simulator(
     sim: sim_utils.SimulationContext,
     scene: InteractiveScene,
@@ -744,6 +784,9 @@ def run_simulator(
     hybrid_osc_7 = make_hybrid_osc(sim.device)
     hybrid_osc_9 = make_hybrid_osc(sim.device)
     dt = sim.get_physics_dt()
+    watchdog_enabled = args_cli.validation_report is not None
+    validation_watchdog = ValidationWatchdog()
+    watchdog_snapshot = validation_watchdog.snapshot()
 
     scan_start = tuple(surface.metadata.get("scan_start_xy", [0.0, 1.18]))
     scan_end = tuple(surface.metadata.get("scan_end_xy", [0.0, 1.34]))
@@ -814,11 +857,16 @@ def run_simulator(
         f"passed={wrist_axis_check.passed}"
     )
     if not wrist_axis_check.passed:
-        return {
+        report = {
             "overall_pass": False,
             "reason": "authored wrist-axis sign verification failed",
             "wrist_axis_check": asdict(wrist_axis_check),
         }
+        return augment_validation_watchdog_report(
+            report,
+            enabled=watchdog_enabled,
+            snapshot=watchdog_snapshot,
+        )
     state_7 = robot_state(robot_7, ee_7_idx, joints_7)
     state_9 = robot_state(robot_9, ee_9_idx, joints_9)
     policy_9 = RedundancyPolicy()
@@ -849,13 +897,16 @@ def run_simulator(
     supervisor_9 = ContactSupervisor(contact_loss_limit=args_cli.contact_loss_limit)
     force_filter_7 = ContactForceFilter(history_length=4, low_pass_alpha=0.5)
     force_filter_9 = ContactForceFilter(history_length=4, low_pass_alpha=0.5)
+    watchdog_force_filter_7 = ContactForceFilter(
+        history_length=4, low_pass_alpha=0.5
+    )
+    watchdog_force_filter_9 = ContactForceFilter(
+        history_length=4, low_pass_alpha=0.5
+    )
     collision_monitor_7 = CollisionMonitor()
     collision_monitor_9 = CollisionMonitor()
     metrics = AcceptanceMetrics(force_target=args_cli.normal_force)
     travel_tracker = JointTravelTracker()
-    watchdog_enabled = args_cli.validation_report is not None
-    validation_watchdog = ValidationWatchdog()
-    watchdog_snapshot = validation_watchdog.snapshot()
     latest_metric_values = np.empty(0, dtype=np.float64)
     hud_window = None
     hud_label = None
@@ -1349,6 +1400,38 @@ def run_simulator(
             )
 
         if watchdog_enabled:
+            post_reaction_7_w = sensor_reaction_force_w(sensor_7, sim.device)
+            post_reaction_9_w = sensor_reaction_force_w(sensor_9, sim.device)
+            post_reaction_7_b = quat_apply_inverse(
+                robot_7.data.root_quat_w.torch, post_reaction_7_w
+            )
+            post_reaction_9_b = quat_apply_inverse(
+                robot_9.data.root_quat_w.torch, post_reaction_9_w
+            )
+            post_measured_force_7 = float(
+                torch.clamp(
+                    torch.sum(post_reaction_7_b * normal_b, dim=-1),
+                    min=0.0,
+                ).item()
+            )
+            post_measured_force_9 = float(
+                torch.clamp(
+                    torch.sum(post_reaction_9_b * normal_b, dim=-1),
+                    min=0.0,
+                ).item()
+            )
+            watchdog_filtered_7 = watchdog_force_filter_7.update(
+                post_measured_force_7
+            ).filtered
+            watchdog_filtered_9 = watchdog_force_filter_9.update(
+                post_measured_force_9
+            ).filtered
+            post_nonprobe_7 = maximum_patient_contact_force(
+                collision_sensors_7, dt
+            )
+            post_nonprobe_9 = maximum_patient_contact_force(
+                collision_sensors_9, dt
+            )
             finite_payloads = tuple(
                 tensor.detach().cpu().numpy()
                 for tensor in (
@@ -1382,17 +1465,18 @@ def run_simulator(
                         reference.phase.value
                     ),
                     contact_present=np.array(
-                        [filtered_7 > 0.5, filtered_9 > 0.5],
+                        [
+                            watchdog_filtered_7 > 0.5,
+                            watchdog_filtered_9 > 0.5,
+                        ],
                         dtype=bool,
                     ),
                     measured_normal_force_n=np.array(
-                        [filtered_7, filtered_9], dtype=np.float64
+                        [watchdog_filtered_7, watchdog_filtered_9],
+                        dtype=np.float64,
                     ),
                     nonprobe_force_n=np.array(
-                        [
-                            collision_7.current_force_n,
-                            collision_9.current_force_n,
-                        ],
+                        [post_nonprobe_7, post_nonprobe_9],
                         dtype=np.float64,
                     ),
                     red_collision_stop=collision_7.freeze_path,
@@ -1436,10 +1520,10 @@ def run_simulator(
                     + (
                         np.asarray(
                             [
-                                filtered_7,
-                                filtered_9,
-                                collision_7.current_force_n,
-                                collision_9.current_force_n,
+                                watchdog_filtered_7,
+                                watchdog_filtered_9,
+                                post_nonprobe_7,
+                                post_nonprobe_9,
                             ]
                         ),
                         latest_metric_values,
@@ -1466,38 +1550,11 @@ def run_simulator(
     report["normal_force_target_n"] = args_cli.normal_force
     report["scenario_total_duration_s"] = trajectory.total_duration
     report["wrist_axis_check"] = asdict(wrist_axis_check)
-    watchdog_report = {
-        "enabled": watchdog_enabled,
-        "thresholds": {
-            "wrist_limit_margin_rad": ValidationWatchdog.LIMIT_MARGIN_RAD,
-            "wrist_limit_duration_s": ValidationWatchdog.LIMIT_DURATION_S,
-            "wrist_speed_rad_s": ValidationWatchdog.SPEED_THRESHOLD_RAD_S,
-            "wrist_speed_duration_s": ValidationWatchdog.SPEED_DURATION_S,
-            "contact_loss_duration_s": (
-                ValidationWatchdog.CONTACT_LOSS_DURATION_S
-            ),
-            "normal_force_limit_n": ValidationWatchdog.FORCE_LIMIT_N,
-            "nonprobe_collision_n": (
-                ValidationWatchdog.NONPROBE_COLLISION_N
-            ),
-            "freeze_window_s": ValidationWatchdog.FREEZE_WINDOW_S,
-            "translation_command_m": (
-                ValidationWatchdog.TRANSLATION_COMMAND_M
-            ),
-            "translation_response_m": (
-                ValidationWatchdog.TRANSLATION_RESPONSE_M
-            ),
-            "rotation_command_deg": 0.5,
-            "rotation_response_deg": 0.05,
-        },
-        **watchdog_snapshot.as_dict(),
-    }
-    report["validation_watchdog"] = watchdog_report
-    report["overall_pass"] = bool(
-        report.get("overall_pass", False)
-        and (not watchdog_enabled or watchdog_snapshot.passed)
+    return augment_validation_watchdog_report(
+        report,
+        enabled=watchdog_enabled,
+        snapshot=watchdog_snapshot,
     )
-    return report
 
 
 def main() -> int:
