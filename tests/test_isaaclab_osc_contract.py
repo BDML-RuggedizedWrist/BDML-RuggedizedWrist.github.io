@@ -1,3 +1,4 @@
+import ast
 from pathlib import Path
 
 
@@ -137,3 +138,68 @@ def test_runner_integrates_phase_travel_metrics_and_persistent_hud():
     assert 'ui.Window("OSC 7-DoF vs 9-DoF", width=520, height=220)' in source
     assert "hud_label.text = format_hud(" in source
     assert "last_supervisor_7.freeze_path and not collision_7.freeze_path" in source
+
+
+def _resolved_robot_actuator_drives(*, wrist_active: bool):
+    """Resolve the authored drive fields from ``make_robot_cfg`` for one side."""
+    module = ast.parse(RUNNER.read_text())
+    function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "make_robot_cfg"
+    )
+    return_node = next(
+        node for node in ast.walk(function) if isinstance(node, ast.Return)
+    )
+    articulation_call = return_node.value
+    actuators_keyword = next(
+        keyword for keyword in articulation_call.keywords if keyword.arg == "actuators"
+    )
+
+    def resolve(node):
+        if isinstance(node, ast.IfExp):
+            assert isinstance(node.test, ast.Name)
+            assert node.test.id == "wrist_active"
+            return resolve(node.body if wrist_active else node.orelse)
+        return ast.literal_eval(node)
+
+    return {
+        resolve(name): {
+            keyword.arg: resolve(keyword.value)
+            for keyword in actuator.keywords
+            if keyword.arg in {"joint_names_expr", "stiffness", "damping"}
+        }
+        for name, actuator in zip(
+            actuators_keyword.value.keys, actuators_keyword.value.values, strict=True
+        )
+    }
+
+
+def test_effort_controlled_osc_joints_disable_implicit_drives():
+    """PhysX must not add passive drives after the official OSC effort."""
+    red = _resolved_robot_actuator_drives(wrist_active=False)
+    green = _resolved_robot_actuator_drives(wrist_active=True)
+    arm_groups = {
+        "shoulder_effort": ["joint[1-2]"],
+        "elbow_effort": ["joint[3-4]"],
+        "arm_wrist_effort": ["joint[5-7]"],
+    }
+
+    for name, joint_names in arm_groups.items():
+        assert red[name] == {
+            "joint_names_expr": joint_names,
+            "stiffness": 0.0,
+            "damping": 0.0,
+        }
+        assert green[name] == red[name]
+
+    assert red["supplemental_wrist"] == {
+        "joint_names_expr": ["wrist_.*_joint"],
+        "stiffness": 45.0,
+        "damping": 7.0,
+    }
+    assert green["supplemental_wrist"] == {
+        "joint_names_expr": ["wrist_.*_joint"],
+        "stiffness": 0.0,
+        "damping": 0.0,
+    }

@@ -19,6 +19,7 @@ def test_hybrid_profile_matches_isaaclab_run_osc_structure():
     assert cfg["contact_wrench_stiffness_task"] == [0.0, 0.0, 0.1, 0.0, 0.0, 0.0]
     assert cfg["nullspace_control"] == "position"
     assert cfg["nullspace_stiffness"] == 10.0
+    assert cfg["nullspace_damping_ratio"] == 1.0
 
 
 def test_pose_profile_is_official_six_axis_variable_kp_osc():
@@ -30,6 +31,7 @@ def test_pose_profile_is_official_six_axis_variable_kp_osc():
     assert cfg["partial_inertial_dynamics_decoupling"] is False
     assert cfg["motion_control_axes_task"] == [1, 1, 1, 1, 1, 1]
     assert cfg["nullspace_stiffness"] == 10.0
+    assert cfg["nullspace_damping_ratio"] == 1.0
 
 
 def test_variable_kp_command_layout_is_unambiguous():

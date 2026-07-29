@@ -365,6 +365,64 @@ def test_pitch_reduction_is_hidden_when_a_side_is_incomplete():
     assert not pitch["pass"]
 
 
+def test_pitch_completion_is_inferred_when_the_next_phase_was_observed():
+    """A 0.1 s metric cadence must not lose a completed phase at its boundary."""
+    metrics = AcceptanceMetrics(settling_samples=0)
+    metrics.add(
+        passing_sample(
+            phase="PITCH_ONLY",
+            completed_7=False,
+            completed_9=False,
+            phase_arm_travel_7_rad=1.0,
+            phase_arm_travel_9_rad=0.4,
+        )
+    )
+    metrics.add(passing_sample(phase="RETURN_PITCH"))
+
+    pitch = metrics.report(scenario_complete=True)["equal_accuracy_comparison"]["pitch"]
+
+    assert pitch["completed"]
+    assert pitch["reduction_percent"] == pytest.approx(60.0)
+
+
+def test_yaw_completion_is_inferred_when_the_next_phase_was_observed():
+    """The successor-phase completion rule applies symmetrically to yaw."""
+    metrics = AcceptanceMetrics(settling_samples=0)
+    metrics.add(
+        passing_sample(
+            phase="YAW_ONLY",
+            completed_7=False,
+            completed_9=False,
+            phase_arm_travel_7_rad=1.0,
+            phase_arm_travel_9_rad=0.4,
+        )
+    )
+    metrics.add(passing_sample(phase="RETURN_YAW"))
+
+    yaw = metrics.report(scenario_complete=True)["equal_accuracy_comparison"]["yaw"]
+
+    assert yaw["completed"]
+    assert yaw["reduction_percent"] == pytest.approx(60.0)
+
+
+def test_unrelated_successor_does_not_mark_pitch_complete():
+    """Only pitch's direct successor can compensate for a missed boundary sample."""
+    metrics = AcceptanceMetrics(settling_samples=0)
+    metrics.add(
+        passing_sample(
+            phase="PITCH_ONLY",
+            completed_7=False,
+            completed_9=False,
+        )
+    )
+    metrics.add(passing_sample(phase="RETURN_YAW"))
+
+    pitch = metrics.report(scenario_complete=True)["equal_accuracy_comparison"]["pitch"]
+
+    assert not pitch["completed"]
+    assert pitch["reduction_percent"] is None
+
+
 def test_yaw_reduction_is_hidden_when_pre_latch_references_differ():
     metrics = AcceptanceMetrics(settling_samples=0)
     metrics.add(

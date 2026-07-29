@@ -285,7 +285,13 @@ class AcceptanceMetrics:
                 and abs(sample.commanded_force_9 - self.force_target) <= 1.0e-6
                 for sample in pre_latch_samples
             )
-            completed = last.completed_7 and last.completed_9
+            next_phase = {
+                "PITCH_ONLY": "RETURN_PITCH",
+                "YAW_ONLY": "RETURN_YAW",
+            }[phase]
+            completed = (
+                last.completed_7 and last.completed_9
+            ) or next_phase in self._seen_phases
             reduction_eligible = (
                 axis_accuracy
                 and completed
