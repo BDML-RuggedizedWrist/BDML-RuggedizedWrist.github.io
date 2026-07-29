@@ -30,6 +30,7 @@ from rizon_osc.surface_model import SurfaceMap
 from rizon_osc.trajectory import (
     Phase,
     SurfaceTrajectory,
+    quintic_progress,
     quaternion_from_rotation_matrix,
     split_task_frame_rotation,
 )
@@ -114,6 +115,7 @@ from isaaclab.utils.math import (
     quat_apply_inverse,
     quat_from_matrix,
     quat_inv,
+    quat_slerp,
     subtract_frame_transforms,
 )
 from pxr import Usd, UsdGeom
@@ -640,6 +642,24 @@ def compose_task_target(
     return torch.cat((position_b, quaternion_b), dim=-1)
 
 
+def blend_startup_target(
+    initial_pose_b: torch.Tensor,
+    target_pose_b: torch.Tensor,
+    normalized_time: float,
+) -> torch.Tensor:
+    """Quintic pose blend that removes the discontinuity at OSC startup."""
+    progress, _, _ = quintic_progress(normalized_time)
+    position = initial_pose_b[:, :3] + progress * (
+        target_pose_b[:, :3] - initial_pose_b[:, :3]
+    )
+    quaternion = quat_slerp(
+        initial_pose_b[0, 3:7].clone(),
+        target_pose_b[0, 3:7].clone(),
+        progress,
+    ).unsqueeze(0)
+    return torch.cat((position, quaternion), dim=-1)
+
+
 def arrow_quaternion_from_x(direction: torch.Tensor) -> torch.Tensor:
     x_axis = torch.nn.functional.normalize(direction, dim=-1)
     z_hint = torch.tensor(
@@ -899,6 +919,7 @@ def run_simulator(
         )
     state_7 = robot_state(robot_7, ee_7_idx, joints_7)
     state_9 = robot_state(robot_9, ee_9_idx, joints_9)
+    startup_pose_b = state_7[3].clone()
     policy_9 = RedundancyPolicy()
     policy_9.initialize_run(state_9[6][0].detach().cpu().numpy())
     initial_position_error, initial_orientation_error = compute_pose_error(
@@ -999,6 +1020,15 @@ def run_simulator(
         task_frame_b, pose_task, target_b, normal_b, wrench_task = task_tensors(
             reference, sim.device
         )
+        if reference.phase is Phase.APPROACH:
+            target_b = blend_startup_target(
+                startup_pose_b,
+                target_b,
+                task_time / trajectory.approach_duration,
+            )
+            task_frame_b = target_b.clone()
+            pose_task = torch.zeros_like(target_b)
+            pose_task[:, 6] = 1.0
         collision_7 = collision_monitor_7.update(
             maximum_patient_contact_force(collision_sensors_7, dt)
         )
