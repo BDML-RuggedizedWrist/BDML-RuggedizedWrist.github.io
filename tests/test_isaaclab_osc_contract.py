@@ -19,11 +19,22 @@ def test_runner_uses_isaaclab_operational_space_controller_directly():
 def test_runner_uses_builtin_force_feedback_and_nullspace_interfaces():
     source = RUNNER.read_text()
 
-    assert "contact_wrench_stiffness_task" in source
+    assert "hybrid_osc_kwargs" in source
     assert "current_ee_force_b=" in source
-    assert "nullspace_control=\"position\"" in source
     assert "nullspace_joint_pos_target=" in source
     assert "AcceptanceMetrics(force_target=args_cli.normal_force)" in source
+
+
+def test_runner_uses_tutorial_profile_without_local_osc_math():
+    source = RUNNER.read_text()
+
+    assert "hybrid_osc_kwargs" in source
+    assert "pose_osc_kwargs" in source
+    assert "torch.cat((pose_task, wrench_task, pose_kp_task)" in source
+    assert "torch.pinverse" not in source
+    assert "torch.linalg.pinv" not in source
+    assert "jacobian_b.mT @" not in source
+    assert "nullspace_stiffness = 55.0" not in source
 
 
 def test_runner_uses_official_net_contact_force_history():

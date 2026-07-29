@@ -18,6 +18,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from rizon_osc.force_control import ContactForceFilter
 from rizon_osc.metrics import AcceptanceMetrics, MetricSample
+from rizon_osc.osc_profile import hybrid_osc_kwargs, pose_osc_kwargs
 from rizon_osc.redundancy_policy import RedundancyPolicy
 from rizon_osc.scene_assets import AssetPaths
 from rizon_osc.state_machine import ContactSupervisor, phase_requires_contact
@@ -325,62 +326,15 @@ class ComparisonSceneCfg(InteractiveSceneCfg):
     )
 
 
-def make_pose_osc(num_joints: int, device: str) -> OperationalSpaceController:
-    cfg = OperationalSpaceControllerCfg(
-        target_types=["pose_abs"],
-        impedance_mode="fixed",
-        inertial_dynamics_decoupling=False,
-        gravity_compensation=True,
-        motion_control_axes_task=(1, 1, 1, 1, 1, 1),
-        motion_stiffness_task=(300.0, 300.0, 300.0, 60.0, 60.0, 60.0),
-        motion_damping_ratio_task=(1.5,) * 6,
-        nullspace_control="position",
-        nullspace_stiffness=10.0 if num_joints == 9 else 5.0,
-        nullspace_damping_ratio=1.0,
-    )
+def make_pose_osc(device: str) -> OperationalSpaceController:
+    cfg = OperationalSpaceControllerCfg(**pose_osc_kwargs())
     return OperationalSpaceController(cfg, num_envs=1, device=device)
 
 
-def make_hybrid_osc(
-    num_joints: int,
-    device: str,
-    *,
-    reorientation: bool = False,
-) -> OperationalSpaceController:
+def make_hybrid_osc(device: str) -> OperationalSpaceController:
     """Create Isaac Lab's closed-loop hybrid motion/force OSC."""
-    tangential_stiffness = 500.0 if reorientation else 350.0
-    rotational_stiffness = 130.0 if reorientation else 60.0
-    if num_joints == 9 and reorientation:
-        nullspace_stiffness = 55.0
-    else:
-        nullspace_stiffness = 12.0 if num_joints == 9 else 5.0
     cfg = OperationalSpaceControllerCfg(
-        target_types=["pose_abs", "wrench_abs"],
-        impedance_mode="fixed",
-        inertial_dynamics_decoupling=False,
-        gravity_compensation=True,
-        motion_control_axes_task=(1, 1, 0, 1, 1, 1),
-        contact_wrench_control_axes_task=(0, 0, 1, 0, 0, 0),
-        contact_wrench_stiffness_task=(
-            0.0,
-            0.0,
-            args_cli.force_gain,
-            0.0,
-            0.0,
-            0.0,
-        ),
-        motion_stiffness_task=(
-            tangential_stiffness,
-            tangential_stiffness,
-            90.0,
-            rotational_stiffness,
-            rotational_stiffness,
-            rotational_stiffness,
-        ),
-        motion_damping_ratio_task=(1.0,) * 6,
-        nullspace_control="position",
-        nullspace_stiffness=nullspace_stiffness,
-        nullspace_damping_ratio=1.0,
+        **hybrid_osc_kwargs(force_gain=args_cli.force_gain)
     )
     return OperationalSpaceController(cfg, num_envs=1, device=device)
 
@@ -663,12 +617,10 @@ def run_simulator(
     print("[INFO] MAGENTA = commanded force; CYAN = measured force")
     print("[INFO] Close the Isaac Sim window manually to stop the GUI.")
 
-    pose_osc_7 = make_pose_osc(7, sim.device)
-    pose_osc_9 = make_pose_osc(9, sim.device)
-    hybrid_osc_7 = make_hybrid_osc(7, sim.device)
-    hybrid_osc_9 = make_hybrid_osc(9, sim.device)
-    reorient_osc_7 = make_hybrid_osc(7, sim.device, reorientation=True)
-    reorient_osc_9 = make_hybrid_osc(9, sim.device, reorientation=True)
+    pose_osc_7 = make_pose_osc(sim.device)
+    pose_osc_9 = make_pose_osc(sim.device)
+    hybrid_osc_7 = make_hybrid_osc(sim.device)
+    hybrid_osc_9 = make_hybrid_osc(sim.device)
     dt = sim.get_physics_dt()
 
     scan_start = tuple(surface.metadata.get("scan_start_xy", [0.0, 1.18]))
@@ -793,6 +745,11 @@ def run_simulator(
         contact_phase=False,
     )
     last_supervisor_9 = last_supervisor_7
+    pose_kp_task = torch.tensor(
+        [[360.0, 360.0, 360.0, 120.0, 120.0, 120.0]],
+        dtype=torch.float32,
+        device=sim.device,
+    )
 
     while simulation_app.is_running():
         state_7 = robot_state(robot_7, ee_7_idx, joints_7)
@@ -811,6 +768,10 @@ def run_simulator(
             policy_9.begin_phase(
                 previous_phase, state_9[6][0].detach().cpu().numpy()
             )
+            pose_osc_7.reset()
+            pose_osc_9.reset()
+            hybrid_osc_7.reset()
+            hybrid_osc_9.reset()
             print(f"[PHASE] {previous_phase}")
         green_null_target_np = policy_9.target(
             state_9[6][0].detach().cpu().numpy(),
@@ -860,6 +821,8 @@ def run_simulator(
         )
         if last_supervisor_7.zero_force_command or last_supervisor_9.zero_force_command:
             wrench_task.zero_()
+        pose_command = torch.cat((pose_task, pose_kp_task), dim=-1)
+        hybrid_command = torch.cat((pose_task, wrench_task, pose_kp_task), dim=-1)
 
         acquiring_7 = (
             reference.phase is Phase.CONTACT_RAMP and filtered_7 <= 0.5
@@ -880,32 +843,22 @@ def run_simulator(
             task_frame_9 = task_frame_b.clone()
             task_frame_9[:, :3] -= 0.002 * normal_b
         if reference.phase is Phase.APPROACH or acquiring_7:
-            command_7 = pose_task
+            command_7 = pose_command
             osc_7 = pose_osc_7
         else:
-            command_7 = torch.cat((pose_task, wrench_task), dim=-1)
-            osc_7 = (
-                reorient_osc_7
-                if reference.phase
-                in (Phase.PITCH_ONLY, Phase.RETURN_NEUTRAL, Phase.YAW_ONLY)
-                else hybrid_osc_7
-            )
+            command_7 = hybrid_command
+            osc_7 = hybrid_osc_7
         if reference.phase is Phase.APPROACH or acquiring_9:
-            command_9 = pose_task
+            command_9 = pose_command
             osc_9 = pose_osc_9
         else:
-            command_9 = torch.cat((pose_task, wrench_task), dim=-1)
-            osc_9 = (
-                reorient_osc_9
-                if reference.phase
-                in (Phase.PITCH_ONLY, Phase.RETURN_NEUTRAL, Phase.YAW_ONLY)
-                else hybrid_osc_9
-            )
+            command_9 = hybrid_command
+            osc_9 = hybrid_osc_9
         commanded_force_7 = (
-            abs(float(command_7[0, 9].item())) if command_7.shape[-1] > 7 else 0.0
+            abs(float(wrench_task[0, 2].item())) if osc_7 is hybrid_osc_7 else 0.0
         )
         commanded_force_9 = (
-            abs(float(command_9[0, 9].item())) if command_9.shape[-1] > 7 else 0.0
+            abs(float(wrench_task[0, 2].item())) if osc_9 is hybrid_osc_9 else 0.0
         )
         actual_target_7_b = compose_task_target(task_frame_7, pose_task)
         actual_target_9_b = compose_task_target(task_frame_9, pose_task)
