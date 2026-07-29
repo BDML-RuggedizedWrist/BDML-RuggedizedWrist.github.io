@@ -37,6 +37,23 @@ def test_runner_uses_tutorial_profile_without_local_osc_math():
     assert "nullspace_stiffness = 55.0" not in source
 
 
+def test_runner_shares_pre_collision_acquisition_command_and_task_frame():
+    source = RUNNER.read_text()
+
+    assert "shared_acquiring =" in source
+    assert "task_frame = task_frame_b" in source
+    assert "command = pose_command if use_pose_osc else hybrid_command" in source
+    assert "osc_7 = pose_osc_7 if use_pose_osc else hybrid_osc_7" in source
+    assert "osc_9 = pose_osc_9 if use_pose_osc else hybrid_osc_9" in source
+    assert source.count("current_task_frame_pose_b=task_frame") == 2
+    assert "acquiring_7 =" not in source
+    assert "acquiring_9 =" not in source
+    assert "task_frame_7 =" not in source
+    assert "task_frame_9 =" not in source
+    assert "command_7 =" not in source
+    assert "command_9 =" not in source
+
+
 def test_runner_uses_official_net_contact_force_history():
     source = RUNNER.read_text()
 
@@ -64,6 +81,6 @@ def test_runtime_audits_actual_per_side_commands_and_safety_history():
 
     assert "commanded_force_7" in source
     assert "commanded_force_9" in source
-    assert "torch.allclose(command_7, command_9)" in source
+    assert "command = pose_command if use_pose_osc else hybrid_command" in source
     assert "max_contact_loss_duration" in source
     assert "scenario_complete=" in source

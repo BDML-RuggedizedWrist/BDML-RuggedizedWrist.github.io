@@ -824,58 +824,35 @@ def run_simulator(
         pose_command = torch.cat((pose_task, pose_kp_task), dim=-1)
         hybrid_command = torch.cat((pose_task, wrench_task, pose_kp_task), dim=-1)
 
-        acquiring_7 = (
-            reference.phase is Phase.CONTACT_RAMP and filtered_7 <= 0.5
+        shared_acquiring = (
+            reference.phase is Phase.CONTACT_RAMP
+            and (filtered_7 <= 0.5 or filtered_9 <= 0.5)
         ) or (
-            last_supervisor_7.freeze_path and filtered_7 <= 0.5
+            (last_supervisor_7.freeze_path and filtered_7 <= 0.5)
+            or (last_supervisor_9.freeze_path and filtered_9 <= 0.5)
         )
-        acquiring_9 = (
-            reference.phase is Phase.CONTACT_RAMP and filtered_9 <= 0.5
-        ) or (
-            last_supervisor_9.freeze_path and filtered_9 <= 0.5
-        )
-        task_frame_7 = task_frame_b
-        task_frame_9 = task_frame_b
-        if acquiring_7 and reference.phase is not Phase.CONTACT_RAMP:
-            task_frame_7 = task_frame_b.clone()
-            task_frame_7[:, :3] -= 0.002 * normal_b
-        if acquiring_9 and reference.phase is not Phase.CONTACT_RAMP:
-            task_frame_9 = task_frame_b.clone()
-            task_frame_9[:, :3] -= 0.002 * normal_b
-        if reference.phase is Phase.APPROACH or acquiring_7:
-            command_7 = pose_command
-            osc_7 = pose_osc_7
-        else:
-            command_7 = hybrid_command
-            osc_7 = hybrid_osc_7
-        if reference.phase is Phase.APPROACH or acquiring_9:
-            command_9 = pose_command
-            osc_9 = pose_osc_9
-        else:
-            command_9 = hybrid_command
-            osc_9 = hybrid_osc_9
-        commanded_force_7 = (
-            abs(float(wrench_task[0, 2].item())) if osc_7 is hybrid_osc_7 else 0.0
-        )
-        commanded_force_9 = (
-            abs(float(wrench_task[0, 2].item())) if osc_9 is hybrid_osc_9 else 0.0
-        )
-        actual_target_7_b = compose_task_target(task_frame_7, pose_task)
-        actual_target_9_b = compose_task_target(task_frame_9, pose_task)
-        references_identical = (
-            command_7.shape == command_9.shape
-            and torch.allclose(command_7, command_9)
-            and torch.allclose(task_frame_7, task_frame_9)
-        )
+        task_frame = task_frame_b
+        if shared_acquiring and reference.phase is not Phase.CONTACT_RAMP:
+            task_frame = task_frame_b.clone()
+            task_frame[:, :3] -= 0.002 * normal_b
+        use_pose_osc = reference.phase is Phase.APPROACH or shared_acquiring
+        command = pose_command if use_pose_osc else hybrid_command
+        osc_7 = pose_osc_7 if use_pose_osc else hybrid_osc_7
+        osc_9 = pose_osc_9 if use_pose_osc else hybrid_osc_9
+        commanded_force = abs(float(wrench_task[0, 2].item())) if not use_pose_osc else 0.0
+        commanded_force_7 = commanded_force
+        commanded_force_9 = commanded_force
+        actual_target_b = compose_task_target(task_frame, pose_task)
+        references_identical = True
         osc_7.set_command(
-            command_7,
+            command,
             current_ee_pose_b=state_7[3],
-            current_task_frame_pose_b=task_frame_7,
+            current_task_frame_pose_b=task_frame,
         )
         osc_9.set_command(
-            command_9,
+            command,
             current_ee_pose_b=state_9[3],
-            current_task_frame_pose_b=task_frame_9,
+            current_task_frame_pose_b=task_frame,
         )
         torque_7 = osc_7.compute(
             jacobian_b=state_7[0],
@@ -931,8 +908,8 @@ def run_simulator(
         robot_7.write_data_to_sim()
         robot_9.write_data_to_sim()
 
-        target_7_w = world_pose(robot_7, actual_target_7_b)
-        target_9_w = world_pose(robot_9, actual_target_9_b)
+        target_7_w = world_pose(robot_7, actual_target_b)
+        target_9_w = world_pose(robot_9, actual_target_b)
         markers["current_7"].visualize(state_7[5][:, :3], state_7[5][:, 3:7])
         markers["current_9"].visualize(state_9[5][:, :3], state_9[5][:, 3:7])
         markers["target_7"].visualize(target_7_w[:, :3], target_7_w[:, 3:7])
@@ -941,8 +918,8 @@ def run_simulator(
         force_quaternion_b = arrow_quaternion_from_x(force_direction_b)
         reaction_quaternion_b = arrow_quaternion_from_x(normal_b)
         marker_values = {
-            "7": (robot_7, actual_target_7_b, commanded_force_7, filtered_7),
-            "9": (robot_9, actual_target_9_b, commanded_force_9, filtered_9),
+            "7": (robot_7, actual_target_b, commanded_force_7, filtered_7),
+            "9": (robot_9, actual_target_b, commanded_force_9, filtered_9),
         }
         for side, (robot, actual_target_b, commanded_force, measured_force) in marker_values.items():
             command_arrow_b = torch.cat(
