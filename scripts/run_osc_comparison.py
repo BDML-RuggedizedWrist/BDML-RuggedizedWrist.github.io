@@ -145,8 +145,8 @@ SURFACE_TRANSLATION_B = np.array(
 )
 PROBE_TIP_OFFSET = 0.13254
 ULTRASOUND_GEL_MATERIAL = sim_utils.RigidBodyMaterialCfg(
-    static_friction=0.08,
-    dynamic_friction=0.05,
+    static_friction=0.02,
+    dynamic_friction=0.01,
     restitution=0.0,
 )
 
@@ -844,13 +844,13 @@ def run_simulator(
         scan_start_xy=scan_start,
         scan_end_xy=scan_end,
         approach_duration=1.0,
-        contact_ramp_duration=0.5,
+        contact_ramp_duration=1.0,
         scan_duration=4.0,
         pitch_duration=1.2,
         neutral_duration=0.5,
         yaw_duration=1.2,
-        approach_clearance=0.012,
-        contact_preload=0.004,
+        approach_clearance=0.005,
+        contact_preload=0.001,
         target_force=args_cli.normal_force,
         reorientation_angle=math.radians(20.0),
     )
@@ -1006,7 +1006,7 @@ def run_simulator(
     )
     last_supervisor_9 = last_supervisor_7
     pose_kp_task = torch.tensor(
-        [[360.0, 360.0, 360.0, 120.0, 120.0, 120.0]],
+        [[480.0, 480.0, 360.0, 120.0, 120.0, 120.0]],
         dtype=torch.float32,
         device=sim.device,
     )
@@ -1123,7 +1123,9 @@ def run_simulator(
             last_safe_red_task_frame if collision_7.freeze_path else task_frame
         )
         red_pose_task = last_safe_red_pose_task if collision_7.freeze_path else pose_task
-        use_pose_osc = reference.phase is Phase.APPROACH
+        use_pose_osc = (
+            reference.phase is Phase.APPROACH or shared_acquiring
+        )
         command_7 = pose_command if use_pose_osc else hybrid_command
         command_9 = pose_command if use_pose_osc else hybrid_command
         task_frame_7 = red_task_frame
@@ -1134,9 +1136,17 @@ def run_simulator(
             command_7 = red_pose_command
         osc_7 = pose_osc_7 if red_use_pose_osc else hybrid_osc_7
         osc_9 = pose_osc_9 if use_pose_osc else hybrid_osc_9
-        commanded_force = abs(float(wrench_task[0, 2].item())) if not use_pose_osc else 0.0
-        commanded_force_7 = 0.0 if collision_7.freeze_path else commanded_force
-        commanded_force_9 = commanded_force
+        commanded_force = abs(float(wrench_task[0, 2].item()))
+        commanded_force_7 = (
+            0.0
+            if red_use_pose_osc
+            else commanded_force
+        )
+        commanded_force_9 = (
+            0.0
+            if use_pose_osc
+            else commanded_force
+        )
         actual_target_7_b = compose_task_target(task_frame_7, red_pose_task)
         actual_target_9_b = compose_task_target(task_frame_9, pose_task)
         if collision_7.freeze_path:
