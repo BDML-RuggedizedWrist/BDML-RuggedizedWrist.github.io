@@ -25,6 +25,25 @@ def pose_osc_kwargs() -> dict[str, object]:
     }
 
 
+def safety_hold_osc_kwargs() -> dict[str, object]:
+    """Official OSC profile for an overdamped irreversible pose hold.
+
+    The safety path is entered while the arm can still have appreciable joint
+    velocity.  A stiff null-space spring makes that transient ring around the
+    captured posture even though it eventually returns.  Keep the posture
+    spring gentle and use the official OSC null-space damper to arrest the
+    motion instead.
+    """
+    return {
+        **_common_kwargs(),
+        "target_types": ["pose_abs"],
+        "motion_control_axes_task": [1, 1, 1, 1, 1, 1],
+        "motion_damping_ratio_task": 4.0,
+        "nullspace_stiffness": 1.0,
+        "nullspace_damping_ratio": 20.0,
+    }
+
+
 def hybrid_osc_kwargs(force_gain: float) -> dict[str, object]:
     return {
         **_common_kwargs(),
@@ -39,6 +58,14 @@ def hybrid_osc_kwargs(force_gain: float) -> dict[str, object]:
             0.0,
             0.0,
         ],
+    }
+
+
+def completion_hold_osc_kwargs(force_gain: float) -> dict[str, object]:
+    """Hybrid 15 N hold with stronger official null-space settling."""
+    return {
+        **hybrid_osc_kwargs(force_gain),
+        "nullspace_stiffness": 30.0,
     }
 
 

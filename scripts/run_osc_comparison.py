@@ -23,13 +23,19 @@ from rizon_osc.hud import HudSnapshot, format_hud
 from rizon_osc.joint_travel import JointTravelTracker
 from rizon_osc.metrics import AcceptanceMetrics, MetricSample
 from rizon_osc.osc_profile import (
+    completion_hold_osc_kwargs,
     hybrid_osc_kwargs,
     pose_osc_kwargs,
+    safety_hold_osc_kwargs,
     surface_scan_osc_kwargs,
 )
 from rizon_osc.redundancy_policy import RedundancyPolicy
 from rizon_osc.scene_assets import AssetPaths
-from rizon_osc.state_machine import ContactSupervisor, phase_requires_contact
+from rizon_osc.state_machine import (
+    ContactSupervisor,
+    SafetyMode,
+    phase_requires_contact,
+)
 from rizon_osc.surface_model import SurfaceMap
 from rizon_osc.trajectory import (
     Phase,
@@ -376,6 +382,20 @@ def make_hybrid_osc(device: str) -> OperationalSpaceController:
     return OperationalSpaceController(cfg, num_envs=1, device=device)
 
 
+def make_safety_hold_osc(device: str) -> OperationalSpaceController:
+    """Create an official six-axis pose hold plus joint-posture OSC."""
+    cfg = OperationalSpaceControllerCfg(**safety_hold_osc_kwargs())
+    return OperationalSpaceController(cfg, num_envs=1, device=device)
+
+
+def make_completion_hold_osc(device: str) -> OperationalSpaceController:
+    """Create the official hybrid OSC used after the trajectory ends."""
+    cfg = OperationalSpaceControllerCfg(
+        **completion_hold_osc_kwargs(force_gain=args_cli.force_gain)
+    )
+    return OperationalSpaceController(cfg, num_envs=1, device=device)
+
+
 def make_surface_scan_osc(device: str) -> OperationalSpaceController:
     """Create the official hybrid OSC with redundant probe-axis spin."""
     cfg = OperationalSpaceControllerCfg(
@@ -659,6 +679,56 @@ def compose_task_target(
     return torch.cat((position_b, quaternion_b), dim=-1)
 
 
+def identity_pose_task(reference: torch.Tensor) -> torch.Tensor:
+    """Return an identity pose command using Isaac Lab's xyzw quaternion order."""
+    identity = torch.zeros_like(reference)
+    identity[:, 6] = 1.0
+    return identity
+
+
+def safety_latch_reason(
+    *,
+    collision_stop: bool,
+    supervisor_mode: SafetyMode,
+    latch_contact_loss: bool,
+    singularity_speed_guard: bool = False,
+) -> str | None:
+    """Classify conditions that must never auto-resume into nominal motion."""
+    if collision_stop:
+        return "nonprobe_collision"
+    if supervisor_mode is SafetyMode.FORCE_HOLD:
+        return "normal_force_overload"
+    if supervisor_mode is SafetyMode.INVALID_SURFACE:
+        return "invalid_surface"
+    if singularity_speed_guard:
+        return "singularity_speed_guard"
+    if latch_contact_loss and supervisor_mode is SafetyMode.REACQUIRE:
+        return "contact_loss"
+    return None
+
+
+def red_singularity_speed_guard(
+    *,
+    phase_name: str,
+    max_main_arm_speed_rad_s: float,
+    threshold_rad_s: float = 1.0,
+) -> bool:
+    """Preempt the red arm's high-speed singular transient in challenge phases."""
+    challenge_phases = (
+        "PITCH_ONLY",
+        "RETURN_PITCH",
+        "YAW_ONLY",
+        "RETURN_YAW",
+        "CHALLENGE_TRANSIT",
+        "CHALLENGE_PITCH_ONLY",
+        "RETURN_NEUTRAL",
+    )
+    return (
+        phase_name in challenge_phases
+        and max_main_arm_speed_rad_s >= threshold_rad_s
+    )
+
+
 def blend_startup_target(
     initial_pose_b: torch.Tensor,
     target_pose_b: torch.Tensor,
@@ -858,6 +928,9 @@ def run_simulator(
     pose_osc_9 = make_pose_osc(sim.device)
     hybrid_osc_7 = make_hybrid_osc(sim.device)
     hybrid_osc_9 = make_hybrid_osc(sim.device)
+    safety_hold_osc_7 = make_safety_hold_osc(sim.device)
+    safety_hold_osc_9 = make_safety_hold_osc(sim.device)
+    completion_hold_osc_9 = make_completion_hold_osc(sim.device)
     scan_osc_7 = make_surface_scan_osc(sim.device)
     scan_osc_9 = make_surface_scan_osc(sim.device)
     dt = sim.get_physics_dt()
@@ -884,6 +957,7 @@ def run_simulator(
         contact_preload=0.001,
         target_force=args_cli.normal_force,
         reorientation_angle=math.radians(20.0),
+        challenge_return_duration=2.0,
     )
 
     default_pos_7 = robot_7.data.default_joint_pos.torch.clone()
@@ -975,8 +1049,14 @@ def run_simulator(
     stage = sim.stage
     fixed_initial = static_transform_snapshot(stage)
     markers = create_markers()
-    supervisor_7 = ContactSupervisor(contact_loss_limit=args_cli.contact_loss_limit)
-    supervisor_9 = ContactSupervisor(contact_loss_limit=args_cli.contact_loss_limit)
+    supervisor_7 = ContactSupervisor(
+        contact_loss_limit=args_cli.contact_loss_limit,
+        hard_force_limit=30.0,
+    )
+    supervisor_9 = ContactSupervisor(
+        contact_loss_limit=args_cli.contact_loss_limit,
+        hard_force_limit=30.0,
+    )
     force_filter_7 = ContactForceFilter(history_length=4, low_pass_alpha=0.5)
     force_filter_9 = ContactForceFilter(history_length=4, low_pass_alpha=0.5)
     watchdog_force_filter_7 = ContactForceFilter(
@@ -1024,10 +1104,11 @@ def run_simulator(
     arm_travel_7 = 0.0
     arm_travel_9 = 0.0
     wrist_travel_9 = 0.0
-    red_collision_phase: str | None = None
+    red_safety_phase: str | None = None
     task_time = 0.0
     step_count = 0
     force_diag_printed = False
+    completion_hold_reported = False
     last_supervisor_7 = supervisor_7.update(
         dt=0.0,
         contact=False,
@@ -1041,8 +1122,14 @@ def run_simulator(
         dtype=torch.float32,
         device=sim.device,
     )
-    last_safe_red_task_frame = initial_task_frame_b.clone()
-    last_safe_red_pose_task = initial_pose_task.clone()
+    red_safety_latched = False
+    green_safety_latched = False
+    red_hold_task_frame = state_7[3].clone()
+    green_hold_task_frame = state_9[3].clone()
+    red_hold_null_target = state_7[6].clone()
+    green_hold_null_target = state_9[6].clone()
+    red_safety_event: dict[str, object] | None = None
+    green_safety_event: dict[str, object] | None = None
 
     while simulation_app.is_running():
         state_7 = robot_state(robot_7, ee_7_idx, joints_7)
@@ -1066,9 +1153,6 @@ def run_simulator(
         collision_9 = collision_monitor_9.update(
             maximum_patient_contact_force(collision_sensors_9, dt)
         )
-        if collision_7.freeze_path and red_collision_phase is None:
-            red_collision_phase = reference.phase.value
-
         if reference.phase.value != previous_phase:
             previous_phase = reference.phase.value
             travel_tracker.begin_phase(
@@ -1084,6 +1168,9 @@ def run_simulator(
             pose_osc_9.reset()
             hybrid_osc_7.reset()
             hybrid_osc_9.reset()
+            safety_hold_osc_7.reset()
+            safety_hold_osc_9.reset()
+            completion_hold_osc_9.reset()
             scan_osc_7.reset()
             scan_osc_9.reset()
             q8_q9 = state_9[6][0, -2:].detach().cpu().numpy()
@@ -1138,13 +1225,77 @@ def run_simulator(
             measured_force=filtered_9,
             contact_phase=contact_phase,
         )
+        max_main_arm_speed_7 = float(
+            torch.max(torch.abs(state_7[7][:, :7])).item()
+        )
+        red_speed_guard = red_singularity_speed_guard(
+            phase_name=reference.phase.value,
+            max_main_arm_speed_rad_s=max_main_arm_speed_7,
+        )
+        red_reason = safety_latch_reason(
+            collision_stop=collision_7.freeze_path,
+            supervisor_mode=last_supervisor_7.mode,
+            latch_contact_loss=True,
+            singularity_speed_guard=red_speed_guard,
+        )
+        green_reason = safety_latch_reason(
+            collision_stop=collision_9.freeze_path,
+            supervisor_mode=last_supervisor_9.mode,
+            latch_contact_loss=False,
+        )
+        if red_reason is not None and not red_safety_latched:
+            red_safety_latched = True
+            red_safety_phase = reference.phase.value
+            red_hold_task_frame = state_7[3].clone()
+            red_hold_null_target = state_7[6].clone()
+            safety_hold_osc_7.reset()
+            red_safety_event = {
+                "reason": red_reason,
+                "phase": reference.phase.value,
+                "task_time_s": task_time,
+                "measured_force_n": filtered_7,
+                "nonprobe_force_n": collision_7.current_force_n,
+                "arm_travel_at_latch_rad": arm_travel_7,
+                "max_joint_speed_rad_s": max_main_arm_speed_7,
+                "max_tip_position_error_m": 0.0,
+                "max_tip_orientation_error_deg": 0.0,
+            }
+            print(
+                "[SAFETY RED] irreversible OSC hold: "
+                f"reason={red_reason} phase={reference.phase.value} "
+                f"t={task_time:.3f}s force={filtered_7:.2f}N "
+                f"nonprobe={collision_7.current_force_n:.2f}N"
+            )
+        if green_reason is not None and not green_safety_latched:
+            green_safety_latched = True
+            green_hold_task_frame = state_9[3].clone()
+            green_hold_null_target = state_9[6].clone()
+            safety_hold_osc_9.reset()
+            green_safety_event = {
+                "reason": green_reason,
+                "phase": reference.phase.value,
+                "task_time_s": task_time,
+                "measured_force_n": filtered_9,
+                "nonprobe_force_n": collision_9.current_force_n,
+                "arm_travel_at_latch_rad": arm_travel_9,
+                "max_joint_speed_rad_s": float(
+                    torch.max(torch.abs(state_9[7])).item()
+                ),
+                "max_tip_position_error_m": 0.0,
+                "max_tip_orientation_error_deg": 0.0,
+            }
+            print(
+                "[SAFETY GREEN] irreversible OSC hold: "
+                f"reason={green_reason} phase={reference.phase.value} "
+                f"t={task_time:.3f}s force={filtered_9:.2f}N "
+                f"nonprobe={collision_9.current_force_n:.2f}N"
+            )
         wrench_task_7 = wrench_task.clone()
         wrench_task_9 = wrench_task.clone()
         if last_supervisor_7.zero_force_command:
             wrench_task_7.zero_()
         if last_supervisor_9.zero_force_command:
             wrench_task_9.zero_()
-        pose_command = torch.cat((pose_task, pose_kp_task), dim=-1)
         hybrid_command_7 = torch.cat(
             (pose_task, wrench_task_7, pose_kp_task), dim=-1
         )
@@ -1154,11 +1305,17 @@ def run_simulator(
 
         initial_shared_acquiring = (
             reference.phase is Phase.CONTACT_RAMP
+            and not red_safety_latched
+            and not green_safety_latched
             and (filtered_7 <= 0.5 or filtered_9 <= 0.5)
         )
-        red_acquiring = initial_shared_acquiring or last_supervisor_7.freeze_path
+        red_acquiring = (
+            not red_safety_latched
+            and (initial_shared_acquiring or last_supervisor_7.freeze_path)
+        )
         green_acquiring = (
-            initial_shared_acquiring or last_supervisor_9.freeze_path
+            not green_safety_latched
+            and (initial_shared_acquiring or last_supervisor_9.freeze_path)
         )
         task_frame_7 = task_frame_b
         task_frame_9 = task_frame_b
@@ -1176,34 +1333,44 @@ def run_simulator(
         ):
             task_frame_9 = task_frame_b.clone()
             task_frame_9[:, :3] -= 0.002 * normal_b
-        if not collision_7.freeze_path:
-            last_safe_red_task_frame = task_frame_7.clone()
-            last_safe_red_pose_task = pose_task.clone()
-        task_frame_7 = (
-            last_safe_red_task_frame if collision_7.freeze_path else task_frame_7
-        )
-        red_pose_task = last_safe_red_pose_task if collision_7.freeze_path else pose_task
+        red_pose_task = pose_task
+        green_pose_task = pose_task
+        if red_safety_latched:
+            task_frame_7 = red_hold_task_frame
+            red_pose_task = identity_pose_task(pose_task)
+            wrench_task_7.zero_()
+        if green_safety_latched:
+            task_frame_9 = green_hold_task_frame
+            green_pose_task = identity_pose_task(pose_task)
+            wrench_task_9.zero_()
         red_use_pose_osc = (
             reference.phase is Phase.APPROACH
             or red_acquiring
-            or collision_7.freeze_path
+            or red_safety_latched
         )
         green_use_pose_osc = (
-            reference.phase is Phase.APPROACH or green_acquiring
+            reference.phase is Phase.APPROACH
+            or green_acquiring
+            or green_safety_latched
         )
-        command_7 = pose_command if red_use_pose_osc else hybrid_command_7
-        command_9 = pose_command if green_use_pose_osc else hybrid_command_9
         red_pose_command = torch.cat((red_pose_task, pose_kp_task), dim=-1)
-        if collision_7.freeze_path:
-            command_7 = red_pose_command
-        if red_use_pose_osc:
+        green_pose_command = torch.cat((green_pose_task, pose_kp_task), dim=-1)
+        command_7 = red_pose_command if red_use_pose_osc else hybrid_command_7
+        command_9 = green_pose_command if green_use_pose_osc else hybrid_command_9
+        if red_safety_latched:
+            osc_7 = safety_hold_osc_7
+        elif red_use_pose_osc:
             osc_7 = pose_osc_7
         elif reference.phase is Phase.SURFACE_SCAN:
             osc_7 = scan_osc_7
         else:
             osc_7 = hybrid_osc_7
-        if green_use_pose_osc:
+        if green_safety_latched:
+            osc_9 = safety_hold_osc_9
+        elif green_use_pose_osc:
             osc_9 = pose_osc_9
+        elif completion_hold_reported:
+            osc_9 = completion_hold_osc_9
         elif reference.phase is Phase.SURFACE_SCAN:
             osc_9 = scan_osc_9
         else:
@@ -1221,15 +1388,16 @@ def run_simulator(
             else commanded_force_9_raw
         )
         actual_target_7_b = compose_task_target(task_frame_7, red_pose_task)
-        actual_target_9_b = compose_task_target(task_frame_9, pose_task)
-        if collision_7.freeze_path:
+        actual_target_9_b = compose_task_target(task_frame_9, green_pose_task)
+        if red_safety_latched or green_safety_latched:
             references_identical = False
         else:
             references_identical = (
                 command_7.shape == command_9.shape
                 and torch.allclose(command_7, command_9)
                 and torch.allclose(task_frame_7, task_frame_9)
-                and not collision_7.freeze_path
+                and not red_safety_latched
+                and not green_safety_latched
             )
         osc_7.set_command(
             command_7,
@@ -1250,7 +1418,9 @@ def run_simulator(
             gravity=state_7[2],
             current_joint_pos=state_7[6],
             current_joint_vel=state_7[7],
-            nullspace_joint_pos_target=null_target_7,
+            nullspace_joint_pos_target=(
+                red_hold_null_target if red_safety_latched else null_target_7
+            ),
         )
         torque_9 = osc_9.compute(
             jacobian_b=state_9[0],
@@ -1261,7 +1431,11 @@ def run_simulator(
             gravity=state_9[2],
             current_joint_pos=state_9[6],
             current_joint_vel=state_9[7],
-            nullspace_joint_pos_target=green_null_target,
+            nullspace_joint_pos_target=(
+                green_hold_null_target
+                if green_safety_latched
+                else green_null_target
+            ),
         )
         if reference.normal_force >= 0.99 * args_cli.normal_force and not force_diag_printed:
             desired_force_b = -args_cli.normal_force * normal_b
@@ -1355,8 +1529,18 @@ def run_simulator(
         sim.step(render=not args_cli.headless)
         scene.update(dt)
         step_count += 1
-        if not last_supervisor_9.freeze_path:
-            task_time += dt
+        if not green_safety_latched and not last_supervisor_9.freeze_path:
+            task_time = min(task_time + dt, trajectory.total_duration)
+        if (
+            task_time >= trajectory.total_duration
+            and not completion_hold_reported
+        ):
+            completion_hold_reported = True
+            completion_hold_osc_9.reset()
+            print(
+                "[TASK] trajectory complete; holding final 15 N reference "
+                "with Isaac Lab OSC until the window is closed."
+            )
 
         post_state_7 = robot_state(robot_7, ee_7_idx, joints_7)
         post_state_9 = robot_state(robot_9, ee_9_idx, joints_9)
@@ -1371,6 +1555,40 @@ def run_simulator(
         wrist_travel_9 += float(torch.sum(delta_9[:, 7:]).item())
         previous_joint_7 = post_state_7[6].clone()
         previous_joint_9 = post_state_9[6].clone()
+        if red_safety_event is not None:
+            hold_position_error_7, hold_rotation_error_7 = compute_pose_error(
+                post_state_7[3][:, :3],
+                post_state_7[3][:, 3:7],
+                red_hold_task_frame[:, :3],
+                red_hold_task_frame[:, 3:7],
+            )
+            red_safety_event["max_tip_position_error_m"] = max(
+                float(red_safety_event["max_tip_position_error_m"]),
+                float(torch.linalg.vector_norm(hold_position_error_7).item()),
+            )
+            red_safety_event["max_tip_orientation_error_deg"] = max(
+                float(red_safety_event["max_tip_orientation_error_deg"]),
+                math.degrees(
+                    float(torch.linalg.vector_norm(hold_rotation_error_7).item())
+                ),
+            )
+        if green_safety_event is not None:
+            hold_position_error_9, hold_rotation_error_9 = compute_pose_error(
+                post_state_9[3][:, :3],
+                post_state_9[3][:, 3:7],
+                green_hold_task_frame[:, :3],
+                green_hold_task_frame[:, 3:7],
+            )
+            green_safety_event["max_tip_position_error_m"] = max(
+                float(green_safety_event["max_tip_position_error_m"]),
+                float(torch.linalg.vector_norm(hold_position_error_9).item()),
+            )
+            green_safety_event["max_tip_orientation_error_deg"] = max(
+                float(green_safety_event["max_tip_orientation_error_deg"]),
+                math.degrees(
+                    float(torch.linalg.vector_norm(hold_rotation_error_9).item())
+                ),
+            )
 
         metric_interval = max(1, round(0.1 / dt))
         if step_count % metric_interval == 0:
@@ -1446,7 +1664,7 @@ def run_simulator(
             )
             phase_completed_7 = (
                 phase_completed_9
-                and red_collision_phase != reference.phase.value
+                and red_safety_phase != reference.phase.value
             )
             if reference.phase not in (Phase.APPROACH, Phase.CONTACT_RAMP):
                 metrics.add(
@@ -1474,8 +1692,8 @@ def run_simulator(
                         phase_wrist_travel_9_rad=travel.wrist_9_rad,
                         nonprobe_force_7_n=collision_7.current_force_n,
                         nonprobe_force_9_n=collision_9.current_force_n,
-                        collision_stop_7=collision_7.freeze_path,
-                        collision_stop_9=collision_9.freeze_path,
+                        collision_stop_7=red_safety_latched,
+                        collision_stop_9=green_safety_latched,
                         completed_7=phase_completed_7,
                         completed_9=phase_completed_9,
                     )
@@ -1623,7 +1841,7 @@ def run_simulator(
                         dtype=np.float64,
                     ),
                     red_collision_stop=(
-                        collision_7.freeze_path
+                        red_safety_latched
                         or (
                             reference.phase
                             in (
@@ -1706,6 +1924,51 @@ def run_simulator(
     report["normal_force_target_n"] = args_cli.normal_force
     report["scenario_total_duration_s"] = trajectory.total_duration
     report["wrist_axis_check"] = asdict(wrist_axis_check)
+    if red_safety_event is not None:
+        final_position_error_7, final_rotation_error_7 = compute_pose_error(
+            post_state_7[3][:, :3],
+            post_state_7[3][:, 3:7],
+            red_hold_task_frame[:, :3],
+            red_hold_task_frame[:, 3:7],
+        )
+        red_safety_event["arm_travel_after_latch_rad"] = (
+            arm_travel_7
+            - float(red_safety_event["arm_travel_at_latch_rad"])
+        )
+        red_safety_event["final_joint_displacement_l1_rad"] = float(
+            torch.sum(torch.abs(previous_joint_7 - red_hold_null_target)).item()
+        )
+        red_safety_event["final_tip_position_error_m"] = float(
+            torch.linalg.vector_norm(final_position_error_7).item()
+        )
+        red_safety_event["final_tip_orientation_error_deg"] = math.degrees(
+            float(torch.linalg.vector_norm(final_rotation_error_7).item())
+        )
+    if green_safety_event is not None:
+        final_position_error_9, final_rotation_error_9 = compute_pose_error(
+            post_state_9[3][:, :3],
+            post_state_9[3][:, 3:7],
+            green_hold_task_frame[:, :3],
+            green_hold_task_frame[:, 3:7],
+        )
+        green_safety_event["arm_travel_after_latch_rad"] = (
+            arm_travel_9
+            - float(green_safety_event["arm_travel_at_latch_rad"])
+        )
+        green_safety_event["final_joint_displacement_l1_rad"] = float(
+            torch.sum(torch.abs(previous_joint_9 - green_hold_null_target)).item()
+        )
+        green_safety_event["final_tip_position_error_m"] = float(
+            torch.linalg.vector_norm(final_position_error_9).item()
+        )
+        green_safety_event["final_tip_orientation_error_deg"] = math.degrees(
+            float(torch.linalg.vector_norm(final_rotation_error_9).item())
+        )
+    report["safety_latches"] = {
+        "red": red_safety_event,
+        "green": green_safety_event,
+    }
+    report["final_reference_hold"] = completion_hold_reported
     return augment_validation_watchdog_report(
         report,
         enabled=watchdog_enabled,

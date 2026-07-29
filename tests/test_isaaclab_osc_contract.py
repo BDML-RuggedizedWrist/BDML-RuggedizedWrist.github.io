@@ -6,6 +6,7 @@ from rizon_osc.validation_watchdog import (
     ValidationWatchdog,
     green_safety_reasons,
 )
+from rizon_osc.state_machine import SafetyMode
 
 
 RUNNER = Path(__file__).parents[1] / "scripts" / "run_osc_comparison.py"
@@ -46,6 +47,7 @@ def test_runner_uses_fast_scan_and_full_ninety_degree_cross_section():
     assert "yaw_duration=2.5" in source
     assert "pitch_angle=math.radians(-35.0)" in source
     assert "yaw_angle=math.radians(90.0)" in source
+    assert "challenge_return_duration=2.0" in source
 
 
 def test_runner_uses_tutorial_profile_without_local_osc_math():
@@ -86,8 +88,8 @@ def test_runner_shares_initial_acquisition_then_isolates_per_robot_recovery():
     assert "green_acquiring =" in source
     assert "hybrid_command_7 =" in source
     assert "hybrid_command_9 =" in source
-    assert "command_7 = pose_command if red_use_pose_osc else hybrid_command_7" in source
-    assert "command_9 = pose_command if green_use_pose_osc else hybrid_command_9" in source
+    assert "command_7 = red_pose_command if red_use_pose_osc else hybrid_command_7" in source
+    assert "command_9 = green_pose_command if green_use_pose_osc else hybrid_command_9" in source
     assert "reference.phase is Phase.SURFACE_SCAN" in source
     assert "osc_7 = scan_osc_7" in source
     assert "osc_9 = scan_osc_9" in source
@@ -95,7 +97,10 @@ def test_runner_shares_initial_acquisition_then_isolates_per_robot_recovery():
     assert "task_frame_9 =" in source
     assert "torch.allclose(command_7, command_9)" in source
     assert "torch.allclose(task_frame_7, task_frame_9)" in source
-    assert "if not last_supervisor_9.freeze_path:" in source
+    assert (
+        "if not green_safety_latched and not last_supervisor_9.freeze_path:"
+        in source
+    )
 
 
 def test_runner_does_not_add_non_osc_wrist_damping():
@@ -276,8 +281,8 @@ def test_runtime_audits_actual_per_side_commands_and_safety_history():
     assert "commanded_force_9" in source
     assert "wrench_task_7 = wrench_task.clone()" in source
     assert "wrench_task_9 = wrench_task.clone()" in source
-    assert "command_7 = pose_command if red_use_pose_osc else hybrid_command_7" in source
-    assert "command_9 = pose_command if green_use_pose_osc else hybrid_command_9" in source
+    assert "command_7 = red_pose_command if red_use_pose_osc else hybrid_command_7" in source
+    assert "command_9 = green_pose_command if green_use_pose_osc else hybrid_command_9" in source
     assert "max_contact_loss_duration" in source
     assert "scenario_complete=" in source
 
@@ -296,7 +301,10 @@ def test_runner_integrates_phase_travel_metrics_and_persistent_hud():
     assert "phase_wrist_travel_9_rad=travel.wrist_9_rad" in source
     assert 'ui.Window("OSC 7-DoF vs 9-DoF", width=520, height=220)' in source
     assert "hud_label.text = format_hud(" in source
-    assert "if not last_supervisor_9.freeze_path:" in source
+    assert (
+        "if not green_safety_latched and not last_supervisor_9.freeze_path:"
+        in source
+    )
 
 
 def _resolved_robot_actuator_drives(*, wrist_active: bool):
@@ -516,6 +524,7 @@ def _load_pure_runner_function(name: str):
     namespace = {
         "ValidationWatchdog": ValidationWatchdog,
         "green_safety_reasons": green_safety_reasons,
+        "SafetyMode": SafetyMode,
     }
     exec(
         compile(
@@ -528,6 +537,99 @@ def _load_pure_runner_function(name: str):
         namespace,
     )
     return namespace[name]
+
+
+def test_safety_latch_reasons_distinguish_recoverable_green_contact_loss():
+    reason = _load_pure_runner_function("safety_latch_reason")
+
+    assert (
+        reason(
+            collision_stop=True,
+            supervisor_mode=SafetyMode.TRACKING,
+            latch_contact_loss=False,
+        )
+        == "nonprobe_collision"
+    )
+    assert (
+        reason(
+            collision_stop=False,
+            supervisor_mode=SafetyMode.FORCE_HOLD,
+            latch_contact_loss=False,
+        )
+        == "normal_force_overload"
+    )
+    assert (
+        reason(
+            collision_stop=False,
+            supervisor_mode=SafetyMode.INVALID_SURFACE,
+            latch_contact_loss=False,
+        )
+        == "invalid_surface"
+    )
+    assert (
+        reason(
+            collision_stop=False,
+            supervisor_mode=SafetyMode.REACQUIRE,
+            latch_contact_loss=True,
+        )
+        == "contact_loss"
+    )
+    assert (
+        reason(
+            collision_stop=False,
+            supervisor_mode=SafetyMode.REACQUIRE,
+            latch_contact_loss=False,
+        )
+        is None
+    )
+    assert (
+        reason(
+            collision_stop=False,
+            supervisor_mode=SafetyMode.TRACKING,
+            latch_contact_loss=False,
+            singularity_speed_guard=True,
+        )
+        == "singularity_speed_guard"
+    )
+
+
+def test_red_singularity_guard_only_applies_to_challenge_phases():
+    guard = _load_pure_runner_function("red_singularity_speed_guard")
+
+    assert guard(
+        phase_name="PITCH_ONLY",
+        max_main_arm_speed_rad_s=1.0,
+    )
+    assert guard(
+        phase_name="CHALLENGE_PITCH_ONLY",
+        max_main_arm_speed_rad_s=1.2,
+    )
+    assert not guard(
+        phase_name="PITCH_ONLY",
+        max_main_arm_speed_rad_s=0.99,
+    )
+    assert not guard(
+        phase_name="APPROACH",
+        max_main_arm_speed_rad_s=1.5,
+    )
+    assert not guard(
+        phase_name="SURFACE_SCAN",
+        max_main_arm_speed_rad_s=1.5,
+    )
+
+
+def test_both_collision_latches_hold_measured_pose_and_joint_posture():
+    source = RUNNER.read_text()
+
+    for side in ("red", "green"):
+        state = "state_7" if side == "red" else "state_9"
+        assert f"{side}_hold_task_frame = {state}[3].clone()" in source
+        assert f"{side}_hold_null_target = {state}[6].clone()" in source
+        assert f"if {side}_safety_latched:" in source
+    assert "or green_safety_latched" in source
+    assert "task_time = min(task_time + dt, trajectory.total_duration)" in source
+    assert '"final_reference_hold" = completion_hold_reported' not in source
+    assert 'report["final_reference_hold"] = completion_hold_reported' in source
 
 
 def test_watchdog_report_schema_and_gate_cover_early_failure():
@@ -707,9 +809,7 @@ def test_watchdog_nonprobe_sensor_updates_are_isolated_and_same_step():
     )
     assert isinstance(red_collision_stop, ast.BoolOp)
     assert isinstance(red_collision_stop.op, ast.Or)
-    assert ast.unparse(red_collision_stop.values[0]) == (
-        "collision_7.freeze_path"
-    )
+    assert ast.unparse(red_collision_stop.values[0]) == "red_safety_latched"
     same_step_collision = red_collision_stop.values[1]
     assert isinstance(same_step_collision, ast.BoolOp)
     assert isinstance(same_step_collision.op, ast.And)
