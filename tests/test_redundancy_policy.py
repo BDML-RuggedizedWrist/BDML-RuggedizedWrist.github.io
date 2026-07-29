@@ -113,6 +113,28 @@ def test_target_rejects_nonfinite_relative_angles(relative_pitch, relative_yaw):
         )
 
 
+@pytest.mark.parametrize(
+    "initial_wrist,relative_pitch,relative_yaw",
+    (
+        ((np.finfo(np.float64).max, 0.0), -np.finfo(np.float64).max, 0.0),
+        ((0.0, np.finfo(np.float64).max), 0.0, np.finfo(np.float64).max),
+    ),
+)
+def test_target_rejects_finite_angles_that_overflow_wrist_target(
+    initial_wrist, relative_pitch, relative_yaw
+):
+    policy = RedundancyPolicy()
+    policy.initialize_run(np.array([0.0] * 7 + list(initial_wrist)))
+    policy.begin_phase("PITCH_ONLY", np.zeros(9))
+
+    with pytest.raises(ValueError, match="finite"):
+        policy.target(
+            np.zeros(9),
+            relative_pitch=relative_pitch,
+            relative_yaw=relative_yaw,
+        )
+
+
 @pytest.mark.parametrize("bad_shape", ((8,), (10,), (1, 9)))
 @pytest.mark.parametrize("method", ("initialize_run", "begin_phase", "target"))
 def test_policy_rejects_unexpected_joint_position_shape(method, bad_shape):

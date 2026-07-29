@@ -69,6 +69,9 @@ class RedundancyPolicy:
 
         target = np.empty(self._expected_joint_count, dtype=np.float64)
         target[: self.num_arm_joints] = self._phase_start_arm
-        target[self.num_arm_joints] = self._run_initial_wrist[0] - pitch
-        target[self.num_arm_joints + 1] = self._run_initial_wrist[1] + yaw
+        with np.errstate(over="ignore"):
+            target[self.num_arm_joints] = self._run_initial_wrist[0] - pitch
+            target[self.num_arm_joints + 1] = self._run_initial_wrist[1] + yaw
+        if not np.isfinite(target).all():
+            raise ValueError("target joint positions must be finite")
         return target
