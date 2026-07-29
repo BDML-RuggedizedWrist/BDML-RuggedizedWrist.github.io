@@ -41,19 +41,17 @@ def test_runner_shares_pre_collision_acquisition_command_and_task_frame():
     source = RUNNER.read_text()
 
     assert "shared_acquiring =" in source
-    assert "task_frame = task_frame_b" in source
-    assert "command = pose_command if use_pose_osc else hybrid_command" in source
+    assert "command_7 = pose_command if use_pose_osc else hybrid_command" in source
+    assert "command_9 = pose_command if use_pose_osc else hybrid_command" in source
     assert "red_use_pose_osc = use_pose_osc or collision_7.freeze_path" in source
     assert "osc_7 = pose_osc_7 if red_use_pose_osc else hybrid_osc_7" in source
     assert "osc_9 = pose_osc_9 if use_pose_osc else hybrid_osc_9" in source
-    assert "current_task_frame_pose_b=red_task_frame" in source
-    assert source.count("current_task_frame_pose_b=task_frame") == 1
+    assert "task_frame_7 =" in source
+    assert "task_frame_9 =" in source
+    assert "torch.allclose(command_7, command_9)" in source
+    assert "torch.allclose(task_frame_7, task_frame_9)" in source
     assert "acquiring_7 =" not in source
     assert "acquiring_9 =" not in source
-    assert "task_frame_7 =" not in source
-    assert "task_frame_9 =" not in source
-    assert "command_7 =" not in source
-    assert "command_9 =" not in source
 
 
 def test_runner_uses_official_net_contact_force_history():
@@ -63,6 +61,20 @@ def test_runner_uses_official_net_contact_force_history():
     sensor_helper = source.split("def sensor_reaction_force_w", maxsplit=1)[1]
     sensor_helper = sensor_helper.split("def maximum_patient_contact_force", maxsplit=1)[0]
     assert "force_matrix_w_history" not in sensor_helper
+
+
+def test_runner_verifies_authored_wrist_axis_signs_before_control():
+    """A swapped authored wrist axis must abort before any OSC torque exists."""
+    source = RUNNER.read_text()
+
+    assert "def verify_wrist_axis_signs(" in source
+    assert "pitch_delta_task_rad" in source
+    assert "yaw_delta_task_rad" in source
+    assert "wrist_axis_check" in source
+    assert 'if not report.get("wrist_axis_check", {}).get("passed", False):' in source
+    assert source.index("if args_cli.validation_report is not None:") < source.index(
+        'if not report.get("wrist_axis_check", {}).get("passed", False):'
+    )
 
 
 def test_runner_separates_probe_contact_from_patient_collision():
@@ -93,6 +105,24 @@ def test_runtime_audits_actual_per_side_commands_and_safety_history():
 
     assert "commanded_force_7" in source
     assert "commanded_force_9" in source
-    assert "command = pose_command if use_pose_osc else hybrid_command" in source
+    assert "command_7 = pose_command if use_pose_osc else hybrid_command" in source
+    assert "command_9 = pose_command if use_pose_osc else hybrid_command" in source
     assert "max_contact_loss_duration" in source
     assert "scenario_complete=" in source
+
+
+def test_runner_integrates_phase_travel_metrics_and_persistent_hud():
+    """The live runner must preserve the pure-module safety evidence."""
+    source = RUNNER.read_text()
+
+    assert "from rizon_osc.hud import HudSnapshot, format_hud" in source
+    assert "from rizon_osc.joint_travel import JointTravelTracker" in source
+    assert "travel_tracker.begin_phase(" in source
+    assert "travel_tracker.update(" in source
+    assert "travel = travel_tracker.snapshot()" in source
+    assert "phase_arm_travel_7_rad=travel.arm_7_rad" in source
+    assert "phase_arm_travel_9_rad=travel.arm_9_rad" in source
+    assert "phase_wrist_travel_9_rad=travel.wrist_9_rad" in source
+    assert 'ui.Window("OSC 7-DoF vs 9-DoF", width=520, height=220)' in source
+    assert "hud_label.text = format_hud(" in source
+    assert "last_supervisor_7.freeze_path and not collision_7.freeze_path" in source

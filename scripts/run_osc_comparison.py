@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict, dataclass
 import json
 import math
 from pathlib import Path
@@ -18,6 +19,8 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from rizon_osc.collision import CollisionMonitor
 from rizon_osc.force_control import ContactForceFilter
+from rizon_osc.hud import HudSnapshot, format_hud
+from rizon_osc.joint_travel import JointTravelTracker
 from rizon_osc.metrics import AcceptanceMetrics, MetricSample
 from rizon_osc.osc_profile import hybrid_osc_kwargs, pose_osc_kwargs
 from rizon_osc.redundancy_policy import RedundancyPolicy
@@ -109,6 +112,9 @@ from isaaclab.utils.math import (
     subtract_frame_transforms,
 )
 from pxr import Usd, UsdGeom
+
+if not args_cli.headless:
+    import omni.ui as ui
 
 
 ROBOT_USD = args_cli.robot_usd.expanduser().resolve()
@@ -375,6 +381,15 @@ def make_patient_collision_sensors(side: str) -> list[ContactSensor]:
     ]
 
 
+@dataclass(frozen=True)
+class WristAxisCheck:
+    """Measured orientation signs for the authored green wrist axes."""
+
+    pitch_delta_task_rad: tuple[float, float, float]
+    yaw_delta_task_rad: tuple[float, float, float]
+    passed: bool
+
+
 def robot_state(
     robot: Articulation,
     ee_body_idx: int,
@@ -440,6 +455,63 @@ def robot_state(
         torch.cat((ee_pos_w, ee_quat_w), dim=-1),
         robot.data.joint_pos.torch[:, controlled_joint_ids],
         robot.data.joint_vel.torch[:, controlled_joint_ids],
+    )
+
+
+def verify_wrist_axis_signs(
+    sim: sim_utils.SimulationContext,
+    scene: InteractiveScene,
+    robot: Articulation,
+    ee_body_idx: int,
+    controlled_joint_ids: list[int],
+    task_frame_quat_b: torch.Tensor,
+) -> WristAxisCheck:
+    """Probe each green wrist joint in physics before OSC torque is enabled."""
+    dt = sim.get_physics_dt()
+    baseline_joint_pos = robot.data.joint_pos.torch.clone()
+    zero_joint_vel = torch.zeros_like(robot.data.joint_vel.torch)
+    baseline_pose_b = robot_state(robot, ee_body_idx, controlled_joint_ids)[3].clone()
+
+    def write_and_measure(position: torch.Tensor) -> torch.Tensor:
+        robot.write_joint_position_to_sim_index(position=position)
+        robot.write_joint_velocity_to_sim_index(velocity=zero_joint_vel)
+        robot.write_data_to_sim()
+        sim.step(render=False)
+        scene.update(dt)
+        return robot_state(robot, ee_body_idx, controlled_joint_ids)[3].clone()
+
+    pitch_trial = baseline_joint_pos.clone()
+    pitch_trial[:, controlled_joint_ids[-2]] += math.radians(1.0)
+    pitch_pose_b = write_and_measure(pitch_trial)
+    write_and_measure(baseline_joint_pos)
+
+    yaw_trial = baseline_joint_pos.clone()
+    yaw_trial[:, controlled_joint_ids[-1]] += math.radians(1.0)
+    yaw_pose_b = write_and_measure(yaw_trial)
+    write_and_measure(baseline_joint_pos)
+
+    _, pitch_delta_b = compute_pose_error(
+        baseline_pose_b[:, :3],
+        baseline_pose_b[:, 3:],
+        pitch_pose_b[:, :3],
+        pitch_pose_b[:, 3:],
+    )
+    _, yaw_delta_b = compute_pose_error(
+        baseline_pose_b[:, :3],
+        baseline_pose_b[:, 3:],
+        yaw_pose_b[:, :3],
+        yaw_pose_b[:, 3:],
+    )
+    pitch_delta_task = quat_apply_inverse(task_frame_quat_b, pitch_delta_b)
+    yaw_delta_task = quat_apply_inverse(task_frame_quat_b, yaw_delta_b)
+    passed = bool(
+        pitch_delta_task[0, 1] < -math.radians(0.5)
+        and yaw_delta_task[0, 2] > math.radians(0.5)
+    )
+    return WristAxisCheck(
+        tuple(float(value) for value in pitch_delta_task[0].tolist()),
+        tuple(float(value) for value in yaw_delta_task[0].tolist()),
+        passed,
     )
 
 
@@ -732,6 +804,29 @@ def run_simulator(
     initial_task_frame_b, initial_pose_task, initial_target_b, initial_normal_b, _ = task_tensors(
         initial_reference, sim.device
     )
+    wrist_axis_check = verify_wrist_axis_signs(
+        sim,
+        scene,
+        robot_9,
+        ee_9_idx,
+        joints_9,
+        initial_task_frame_b[:, 3:7],
+    )
+    print(
+        "[VALIDATION] wrist-axis signs pitch(task xyz)="
+        f"{wrist_axis_check.pitch_delta_task_rad} "
+        "yaw(task xyz)="
+        f"{wrist_axis_check.yaw_delta_task_rad} "
+        f"passed={wrist_axis_check.passed}"
+    )
+    if not wrist_axis_check.passed:
+        return {
+            "overall_pass": False,
+            "reason": "authored wrist-axis sign verification failed",
+            "wrist_axis_check": asdict(wrist_axis_check),
+        }
+    state_7 = robot_state(robot_7, ee_7_idx, joints_7)
+    state_9 = robot_state(robot_9, ee_9_idx, joints_9)
     initial_position_error, initial_orientation_error = compute_pose_error(
         state_7[3][:, :3],
         state_7[3][:, 3:7],
@@ -762,6 +857,14 @@ def run_simulator(
     collision_monitor_7 = CollisionMonitor()
     collision_monitor_9 = CollisionMonitor()
     metrics = AcceptanceMetrics(force_target=args_cli.normal_force)
+    travel_tracker = JointTravelTracker()
+    hud_window = None
+    hud_label = None
+    if not args_cli.headless:
+        hud_window = ui.Window("OSC 7-DoF vs 9-DoF", width=520, height=220)
+        with hud_window.frame:
+            with ui.VStack():
+                hud_label = ui.Label("Waiting for first OSC metric…", word_wrap=True)
 
     effort_limits_7 = torch.tensor(
         [[123.0, 123.0, 64.0, 64.0, 39.0, 39.0, 39.0]],
@@ -789,9 +892,7 @@ def run_simulator(
     arm_travel_7 = 0.0
     arm_travel_9 = 0.0
     wrist_travel_9 = 0.0
-    phase_arm_travel_7 = 0.0
-    phase_arm_travel_9 = 0.0
-    phase_wrist_travel_9 = 0.0
+    red_collision_phase: str | None = None
     task_time = 0.0
     step_count = 0
     force_diag_printed = False
@@ -821,18 +922,22 @@ def run_simulator(
         collision_7 = collision_monitor_7.update(
             maximum_patient_contact_force(collision_sensors_7, dt)
         )
-        collision_monitor_9.update(
+        collision_9 = collision_monitor_9.update(
             maximum_patient_contact_force(collision_sensors_9, dt)
         )
+        if collision_7.freeze_path and red_collision_phase is None:
+            red_collision_phase = reference.phase.value
 
         if reference.phase.value != previous_phase:
             previous_phase = reference.phase.value
-            phase_arm_travel_7 = 0.0
-            phase_arm_travel_9 = 0.0
-            phase_wrist_travel_9 = 0.0
+            travel_tracker.begin_phase(
+                reference.phase.value,
+                state_7[6][0].detach().cpu().numpy(),
+                state_9[6][0].detach().cpu().numpy(),
+            )
             null_target_7 = state_7[6].clone()
             policy_9.begin_phase(
-                previous_phase, state_9[6][0].detach().cpu().numpy()
+                reference.phase.value, state_9[6][0].detach().cpu().numpy()
             )
             pose_osc_7.reset()
             pose_osc_9.reset()
@@ -908,27 +1013,39 @@ def run_simulator(
             last_safe_red_task_frame if collision_7.freeze_path else task_frame
         )
         red_pose_task = last_safe_red_pose_task if collision_7.freeze_path else pose_task
-        use_pose_osc = reference.phase is Phase.APPROACH or shared_acquiring
-        command = pose_command if use_pose_osc else hybrid_command
+        use_pose_osc = reference.phase is Phase.APPROACH
+        command_7 = pose_command if use_pose_osc else hybrid_command
+        command_9 = pose_command if use_pose_osc else hybrid_command
+        task_frame_7 = red_task_frame
+        task_frame_9 = task_frame
         red_use_pose_osc = use_pose_osc or collision_7.freeze_path
         red_pose_command = torch.cat((red_pose_task, pose_kp_task), dim=-1)
+        if collision_7.freeze_path:
+            command_7 = red_pose_command
         osc_7 = pose_osc_7 if red_use_pose_osc else hybrid_osc_7
         osc_9 = pose_osc_9 if use_pose_osc else hybrid_osc_9
         commanded_force = abs(float(wrench_task[0, 2].item())) if not use_pose_osc else 0.0
         commanded_force_7 = 0.0 if collision_7.freeze_path else commanded_force
         commanded_force_9 = commanded_force
-        actual_target_7_b = compose_task_target(red_task_frame, red_pose_task)
-        actual_target_9_b = compose_task_target(task_frame, pose_task)
-        references_identical = not collision_7.freeze_path
+        actual_target_7_b = compose_task_target(task_frame_7, red_pose_task)
+        actual_target_9_b = compose_task_target(task_frame_9, pose_task)
+        if collision_7.freeze_path:
+            references_identical = False
+        else:
+            references_identical = (
+                torch.allclose(command_7, command_9)
+                and torch.allclose(task_frame_7, task_frame_9)
+                and not collision_7.freeze_path
+            )
         osc_7.set_command(
-            red_pose_command if red_use_pose_osc else command,
+            command_7,
             current_ee_pose_b=state_7[3],
-            current_task_frame_pose_b=red_task_frame,
+            current_task_frame_pose_b=task_frame_7,
         )
         osc_9.set_command(
-            command,
+            command_9,
             current_ee_pose_b=state_9[3],
-            current_task_frame_pose_b=task_frame,
+            current_task_frame_pose_b=task_frame_9,
         )
         torque_7 = osc_7.compute(
             jacobian_b=state_7[0],
@@ -1044,19 +1161,25 @@ def run_simulator(
         sim.step(render=not args_cli.headless)
         scene.update(dt)
         step_count += 1
-        if not (last_supervisor_7.freeze_path or last_supervisor_9.freeze_path):
+        if not (
+            (last_supervisor_7.freeze_path and not collision_7.freeze_path)
+            or last_supervisor_9.freeze_path
+        ):
             task_time += dt
 
-        delta_7 = torch.abs(state_7[6] - previous_joint_7)
-        delta_9 = torch.abs(state_9[6] - previous_joint_9)
+        post_state_7 = robot_state(robot_7, ee_7_idx, joints_7)
+        post_state_9 = robot_state(robot_9, ee_9_idx, joints_9)
+        travel_tracker.update(
+            post_state_7[6][0].detach().cpu().numpy(),
+            post_state_9[6][0].detach().cpu().numpy(),
+        )
+        delta_7 = torch.abs(post_state_7[6] - previous_joint_7)
+        delta_9 = torch.abs(post_state_9[6] - previous_joint_9)
         arm_travel_7 += float(torch.sum(delta_7[:, :7]).item())
         arm_travel_9 += float(torch.sum(delta_9[:, :7]).item())
         wrist_travel_9 += float(torch.sum(delta_9[:, 7:]).item())
-        phase_arm_travel_7 += float(torch.sum(delta_7[:, :7]).item())
-        phase_arm_travel_9 += float(torch.sum(delta_9[:, :7]).item())
-        phase_wrist_travel_9 += float(torch.sum(delta_9[:, 7:]).item())
-        previous_joint_7 = state_7[6].clone()
-        previous_joint_9 = state_9[6].clone()
+        previous_joint_7 = post_state_7[6].clone()
+        previous_joint_9 = post_state_9[6].clone()
 
         metric_interval = max(1, round(0.1 / dt))
         if step_count % metric_interval == 0:
@@ -1124,6 +1247,16 @@ def run_simulator(
                 )
             )
             drift = maximum_static_drift(stage, fixed_initial)
+            travel = travel_tracker.snapshot()
+            next_phase = trajectory.reference(task_time).phase
+            phase_completed_9 = (
+                next_phase is not reference.phase
+                or task_time >= trajectory.total_duration
+            )
+            phase_completed_7 = (
+                phase_completed_9
+                and red_collision_phase != reference.phase.value
+            )
             if reference.phase not in (Phase.APPROACH, Phase.CONTACT_RAMP):
                 metrics.add(
                     MetricSample(
@@ -1145,6 +1278,29 @@ def run_simulator(
                         wrist_travel_9_rad=wrist_travel_9,
                         static_drift_m=drift,
                         references_identical=references_identical,
+                        phase_arm_travel_7_rad=travel.arm_7_rad,
+                        phase_arm_travel_9_rad=travel.arm_9_rad,
+                        phase_wrist_travel_9_rad=travel.wrist_9_rad,
+                        nonprobe_force_7_n=collision_7.current_force_n,
+                        nonprobe_force_9_n=collision_9.current_force_n,
+                        collision_stop_7=collision_7.freeze_path,
+                        collision_stop_9=collision_9.freeze_path,
+                        completed_7=phase_completed_7,
+                        completed_9=phase_completed_9,
+                    )
+                )
+            if hud_label is not None:
+                hud_label.text = format_hud(
+                    HudSnapshot(
+                        phase=reference.phase.value,
+                        force_7_n=filtered_7,
+                        force_9_n=filtered_9,
+                        arm_7_rad=travel.arm_7_rad,
+                        arm_9_rad=travel.arm_9_rad,
+                        wrist_9_rad=travel.wrist_9_rad,
+                        reduction_percent=travel.reduction_percent,
+                        collision_7=collision_7.level.value,
+                        collision_9=collision_9.level.value,
                     )
                 )
             raw_reduction_text = "n/a"
@@ -1169,8 +1325,8 @@ def run_simulator(
                 f"arm travel={arm_travel_7:5.2f}/{arm_travel_9:5.2f} rad "
                 f"raw reduction={raw_reduction_text} | "
                 f"wrist9={wrist_travel_9:5.2f} rad | "
-                f"phase arm={phase_arm_travel_7:4.2f}/"
-                f"{phase_arm_travel_9:4.2f} wrist9={phase_wrist_travel_9:4.2f} | "
+                f"phase arm={travel.arm_7_rad:4.2f}/"
+                f"{travel.arm_9_rad:4.2f} wrist9={travel.wrist_9_rad:4.2f} | "
                 f"static drift={drift:.2e}"
             )
 
@@ -1186,6 +1342,7 @@ def run_simulator(
     report["physics_steps"] = step_count
     report["normal_force_target_n"] = args_cli.normal_force
     report["scenario_total_duration_s"] = trajectory.total_duration
+    report["wrist_axis_check"] = asdict(wrist_axis_check)
     return report
 
 
@@ -1232,6 +1389,9 @@ def main() -> int:
         print(f"[INFO] Validation report: {target}")
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if report.get("overall_pass", False) else 2
+    if not report.get("wrist_axis_check", {}).get("passed", False):
+        print("[ERROR] Wrist-axis sign verification failed; task control was aborted.")
+        return 2
     return 0
 
 
