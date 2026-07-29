@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rizon-osc"
+version = "0.1.0"
+description = "Weighted operational-space ultrasound contact demo for Flexiv Rizon 4s"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "torch>=2.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "trimesh>=4.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-ra"
+

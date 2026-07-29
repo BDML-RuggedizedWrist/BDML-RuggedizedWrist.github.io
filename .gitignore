@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local CAD conversions and validation output are reproducible but machine-specific.
+generated/
+logs/
+*.log
+
+# Isaac Sim / Kit runtime state.
+_build/
+kit/
+
