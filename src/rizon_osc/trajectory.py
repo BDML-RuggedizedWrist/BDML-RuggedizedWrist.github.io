@@ -16,8 +16,12 @@ class Phase(str, Enum):
     CONTACT_RAMP = "CONTACT_RAMP"
     SURFACE_SCAN = "SURFACE_SCAN"
     PITCH_ONLY = "PITCH_ONLY"
-    RETURN_NEUTRAL = "RETURN_NEUTRAL"
+    RETURN_PITCH = "RETURN_PITCH"
     YAW_ONLY = "YAW_ONLY"
+    RETURN_YAW = "RETURN_YAW"
+    CHALLENGE_TRANSIT = "CHALLENGE_TRANSIT"
+    CHALLENGE_PITCH_ONLY = "CHALLENGE_PITCH_ONLY"
+    RETURN_NEUTRAL = "RETURN_NEUTRAL"
 
 
 @dataclass(frozen=True)
@@ -144,7 +148,7 @@ def _angular_velocity(rotation_minus: np.ndarray, rotation_plus: np.ndarray, dt:
 
 
 class SurfaceTrajectory:
-    """One upper-torso scan followed by one fixed-point reorientation sequence."""
+    """One upper-torso scan followed by wrist-advantage reorientation tasks."""
 
     def __init__(
         self,
@@ -158,6 +162,13 @@ class SurfaceTrajectory:
         pitch_duration: float = 1.0,
         neutral_duration: float = 0.5,
         yaw_duration: float = 1.0,
+        challenge_xy: tuple[float, float] = (0.10, 1.32),
+        pitch_angle: float = math.radians(35.0),
+        yaw_angle: float = math.radians(45.0),
+        challenge_pitch_angle: float = math.radians(50.0),
+        challenge_transit_duration: float = 2.0,
+        challenge_pitch_duration: float = 1.5,
+        challenge_return_duration: float = 0.6,
         approach_clearance: float = 0.005,
         contact_preload: float = 0.002,
         target_force: float = 15.0,
@@ -171,6 +182,9 @@ class SurfaceTrajectory:
             pitch_duration,
             neutral_duration,
             yaw_duration,
+            challenge_transit_duration,
+            challenge_pitch_duration,
+            challenge_return_duration,
         )
         if any(value < 0.0 for value in durations) or scan_duration <= 0.0:
             raise ValueError("trajectory durations must be nonnegative and scan duration positive")
@@ -188,17 +202,32 @@ class SurfaceTrajectory:
             ) if scan_end_xy is None else scan_end_xy
         self.scan_start_xy = np.asarray(scan_start_xy, dtype=np.float64)
         self.scan_end_xy = np.asarray(scan_end_xy, dtype=np.float64)
+        self.challenge_xy = np.asarray(challenge_xy, dtype=np.float64)
         self.approach_duration = float(approach_duration)
         self.contact_ramp_duration = float(contact_ramp_duration)
         self.scan_duration = float(scan_duration)
         self.pitch_duration = float(pitch_duration)
         self.neutral_duration = float(neutral_duration)
         self.yaw_duration = float(yaw_duration)
+        self.pitch_angle = float(pitch_angle)
+        self.yaw_angle = float(yaw_angle)
+        self.challenge_pitch_angle = float(challenge_pitch_angle)
+        self.challenge_transit_duration = float(challenge_transit_duration)
+        self.challenge_pitch_duration = float(challenge_pitch_duration)
+        self.challenge_return_duration = float(challenge_return_duration)
         self.approach_clearance = float(approach_clearance)
         self.contact_preload = float(contact_preload)
         self.target_force = float(target_force)
         self.reorientation_angle = float(reorientation_angle)
         self.derivative_dt = float(derivative_dt)
+        self._challenge_transit_start = (
+            self.approach_duration
+            + self.contact_ramp_duration
+            + self.scan_duration
+            + self.pitch_duration
+            + 2.0 * self.neutral_duration
+            + self.yaw_duration
+        )
         self._last_safe: TaskReference | None = None
 
     @property
@@ -211,7 +240,14 @@ class SurfaceTrajectory:
             + self.pitch_duration
             + 2.0 * self.neutral_duration
             + self.yaw_duration
+            + self.challenge_transit_duration
+            + self.challenge_pitch_duration
+            + self.challenge_return_duration
         )
+
+    @property
+    def challenge_transit_mid_time(self) -> float:
+        return self._challenge_transit_start + 0.5 * self.challenge_transit_duration
 
     def reference(self, time_seconds: float) -> TaskReference:
         """Return a reference, holding the most recent safe one if geometry is invalid."""
@@ -240,6 +276,11 @@ class SurfaceTrajectory:
         elif phase is Phase.SURFACE_SCAN:
             scan_progress, _, _ = quintic_progress(progress)
             xy = self.scan_start_xy + scan_progress * (self.scan_end_xy - self.scan_start_xy)
+        elif phase is Phase.CHALLENGE_TRANSIT:
+            transit_progress, _, _ = quintic_progress(progress)
+            xy = self.scan_end_xy + transit_progress * (self.challenge_xy - self.scan_end_xy)
+        elif phase in (Phase.CHALLENGE_PITCH_ONLY, Phase.RETURN_NEUTRAL):
+            xy = self.challenge_xy
         else:
             xy = self.scan_end_xy
 
@@ -299,48 +340,92 @@ class SurfaceTrajectory:
         approach_end = self.approach_duration
         ramp_end = approach_end + self.contact_ramp_duration
         scan_end = ramp_end + self.scan_duration
+        pitch_end = scan_end + self.pitch_duration
+        return_pitch_end = pitch_end + self.neutral_duration
+        yaw_end = return_pitch_end + self.yaw_duration
+        return_yaw_end = yaw_end + self.neutral_duration
+        challenge_transit_end = return_yaw_end + self.challenge_transit_duration
+        challenge_pitch_end = challenge_transit_end + self.challenge_pitch_duration
+        challenge_return_end = challenge_pitch_end + self.challenge_return_duration
 
         if time_seconds < approach_end:
             return Phase.APPROACH, 0.0, np.zeros(3), 0.0
         if time_seconds < ramp_end:
-            u = 1.0 if self.contact_ramp_duration == 0.0 else (
-                time_seconds - approach_end
-            ) / self.contact_ramp_duration
+            u = (time_seconds - approach_end) / max(
+                self.contact_ramp_duration, 1.0e-12
+            )
             force_progress, _, _ = quintic_progress(u)
             return Phase.CONTACT_RAMP, u, np.zeros(3), self.target_force * force_progress
         if time_seconds <= scan_end:
             u = (time_seconds - ramp_end) / self.scan_duration
             return Phase.SURFACE_SCAN, u, np.zeros(3), self.target_force
-
-        sequence_duration = (
-            self.pitch_duration + 2.0 * self.neutral_duration + self.yaw_duration
-        )
-        if sequence_duration <= 0.0:
-            return Phase.RETURN_NEUTRAL, 0.0, np.zeros(3), self.target_force
-        sequence_time = time_seconds - scan_end
-        if sequence_time < self.pitch_duration:
-            u = sequence_time / max(self.pitch_duration, 1.0e-12)
-            pulse = math.sin(math.pi * u) ** 2
+        if self.pitch_duration > 0.0 and time_seconds <= pitch_end:
+            u = (time_seconds - scan_end) / self.pitch_duration
+            progress, _, _ = quintic_progress(u)
             return (
                 Phase.PITCH_ONLY,
                 u,
-                np.array([0.0, self.reorientation_angle * pulse, 0.0]),
+                np.array([0.0, self.pitch_angle * progress, 0.0]),
                 self.target_force,
             )
-        sequence_time -= self.pitch_duration
-        if sequence_time < self.neutral_duration:
-            return Phase.RETURN_NEUTRAL, 0.0, np.zeros(3), self.target_force
-        sequence_time -= self.neutral_duration
-        if sequence_time < self.yaw_duration:
-            u = sequence_time / max(self.yaw_duration, 1.0e-12)
-            pulse = math.sin(math.pi * u) ** 2
+        if self.neutral_duration > 0.0 and time_seconds < return_pitch_end:
+            u = (time_seconds - pitch_end) / self.neutral_duration
+            progress, _, _ = quintic_progress(u)
+            return (
+                Phase.RETURN_PITCH,
+                u,
+                np.array([0.0, self.pitch_angle * (1.0 - progress), 0.0]),
+                self.target_force,
+            )
+        if self.yaw_duration > 0.0 and time_seconds <= yaw_end:
+            u = (time_seconds - return_pitch_end) / self.yaw_duration
+            progress, _, _ = quintic_progress(u)
             return (
                 Phase.YAW_ONLY,
                 u,
-                np.array([0.0, 0.0, self.reorientation_angle * pulse]),
+                np.array([0.0, 0.0, self.yaw_angle * progress]),
                 self.target_force,
             )
-        return Phase.RETURN_NEUTRAL, 0.0, np.zeros(3), self.target_force
+        if self.neutral_duration > 0.0 and time_seconds < return_yaw_end:
+            u = (time_seconds - yaw_end) / self.neutral_duration
+            progress, _, _ = quintic_progress(u)
+            return (
+                Phase.RETURN_YAW,
+                u,
+                np.array([0.0, 0.0, self.yaw_angle * (1.0 - progress)]),
+                self.target_force,
+            )
+        if (
+            self.challenge_transit_duration > 0.0
+            and time_seconds < challenge_transit_end
+        ):
+            u = (time_seconds - return_yaw_end) / self.challenge_transit_duration
+            return Phase.CHALLENGE_TRANSIT, u, np.zeros(3), self.target_force
+        if (
+            self.challenge_pitch_duration > 0.0
+            and time_seconds <= challenge_pitch_end
+        ):
+            u = (time_seconds - challenge_transit_end) / self.challenge_pitch_duration
+            progress, _, _ = quintic_progress(u)
+            return (
+                Phase.CHALLENGE_PITCH_ONLY,
+                u,
+                np.array([0.0, self.challenge_pitch_angle * progress, 0.0]),
+                self.target_force,
+            )
+        if (
+            self.challenge_return_duration > 0.0
+            and time_seconds < challenge_return_end
+        ):
+            u = (time_seconds - challenge_pitch_end) / self.challenge_return_duration
+            progress, _, _ = quintic_progress(u)
+            return (
+                Phase.RETURN_NEUTRAL,
+                u,
+                np.array([0.0, self.challenge_pitch_angle * (1.0 - progress), 0.0]),
+                self.target_force,
+            )
+        return Phase.RETURN_NEUTRAL, 1.0, np.zeros(3), self.target_force
 
     def _derivatives(
         self, time_seconds: float, center: TaskReference
