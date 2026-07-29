@@ -46,6 +46,11 @@ PROBE_TIP = f"{PROBE}/probe_tip"
 # this centered terminal frame.  The quaternion preserves the real shaft axis.
 TOOL_ROLL_POS_IN_PITCH = (-0.0011588743, -0.0316500, 0.0121950452)
 TOOL_ROLL_ROT_IN_PITCH = (0.9988782, 0.0, -0.04735377, 0.0)
+# Rotate both roll-joint local frames 180 degrees about X.  This preserves the
+# q=0 pose while reversing the authored local +Z axis, so a positive ninth
+# joint command is positive task-frame yaw.
+ROLL_JOINT_ROT0 = (0.0, 0.9988782, 0.0, 0.04735377)
+ROLL_JOINT_ROT1 = (0.0, 1.0, 0.0, 0.0)
 # Keep the probe rigid-body/control frame unchanged and rotate only its CAD,
 # collision proxy, and visible contact pad +90 degrees about local Z.  This
 # gives the requested axial mounting without redefining the OSC end-effector
@@ -120,11 +125,16 @@ def rotate_probe_geometry_about_z(stage: Usd.Stage) -> None:
     )
 
 
-def set_joint_frames(joint, pos0, rot0=(1.0, 0.0, 0.0, 0.0)) -> None:
+def set_joint_frames(
+    joint,
+    pos0,
+    rot0=(1.0, 0.0, 0.0, 0.0),
+    rot1=(1.0, 0.0, 0.0, 0.0),
+) -> None:
     joint.CreateLocalPos0Attr(Gf.Vec3f(*pos0))
     joint.CreateLocalRot0Attr(Gf.Quatf(rot0[0], Gf.Vec3f(*rot0[1:])))
     joint.CreateLocalPos1Attr(Gf.Vec3f(0.0))
-    joint.CreateLocalRot1Attr(Gf.Quatf(1.0, Gf.Vec3f(0.0)))
+    joint.CreateLocalRot1Attr(Gf.Quatf(rot1[0], Gf.Vec3f(*rot1[1:])))
 
 
 def add_fixed_joint(stage: Usd.Stage, name: str, body0: str, body1: str, pos0, rot0=(1, 0, 0, 0)):
@@ -143,6 +153,7 @@ def add_revolute_joint(
     rot0,
     axis: str,
     limits: tuple[float, float],
+    rot1=(1.0, 0.0, 0.0, 0.0),
 ):
     joint = UsdPhysics.RevoluteJoint.Define(stage, f"{ROOT}/joints/{name}")
     joint.CreateBody0Rel().SetTargets([Sdf.Path(body0)])
@@ -150,7 +161,7 @@ def add_revolute_joint(
     joint.CreateAxisAttr(axis)
     joint.CreateLowerLimitAttr(limits[0])
     joint.CreateUpperLimitAttr(limits[1])
-    set_joint_frames(joint, pos0, rot0)
+    set_joint_frames(joint, pos0, rot0, rot1)
 
     drive = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), "angular")
     drive.CreateTypeAttr("force")
@@ -219,14 +230,15 @@ def main() -> None:
     add_body(stage, PITCH_LINK, 0.55)
     add_body(stage, TOOL_ROLL_LINK, 0.10)
     add_body(stage, PROBE, 0.22)
-    # The probe is a nested rigid body beneath the supplemental wrist.  The
-    # generic UsdFileCfg contact activation stops when it encounters its
-    # rigid parent, so explicitly author the report API on this final body.
-    probe_body = stage.GetPrimAtPath(PROBE)
-    probe_body.AddAppliedSchema("PhysxContactReportAPI")
-    probe_body.CreateAttribute(
-        "physxContactReport:threshold", Sdf.ValueTypeNames.Float
-    ).Set(0.0)
+    # Generic UsdFileCfg contact activation stops at the nested wrist rigid
+    # body.  The probe-force and non-probe collision sensors therefore need
+    # explicit reporting schemas on every supplemental wrist body they read.
+    for body_path in (WRIST_BASE, PITCH_LINK, TOOL_ROLL_LINK, PROBE):
+        body = stage.GetPrimAtPath(body_path)
+        body.AddAppliedSchema("PhysxContactReportAPI")
+        body.CreateAttribute(
+            "physxContactReport:threshold", Sdf.ValueTypeNames.Float
+        ).Set(0.0)
 
     # Conservative proxies: detailed CAD remains visible, while these simple
     # convex shapes make contact robust and fast.  Adjacent self-collision is
@@ -262,9 +274,10 @@ def main() -> None:
         PITCH_LINK,
         TOOL_ROLL_LINK,
         TOOL_ROLL_POS_IN_PITCH,
-        TOOL_ROLL_ROT_IN_PITCH,
+        ROLL_JOINT_ROT0,
         "Z",
         (-90.0, 90.0),
+        ROLL_JOINT_ROT1,
     )
     # Flip the probe at its mount so its acoustic face points along the
     # Rizon tool direction (toward the phantom), not back through the wrist.
