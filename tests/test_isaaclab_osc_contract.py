@@ -112,6 +112,113 @@ def test_runner_verifies_authored_wrist_axis_signs_before_control():
     )
 
 
+def test_wrist_axis_precheck_stabilizes_and_restores_both_robots():
+    """Every wrist-sign physics step must keep RED from freely falling."""
+    module = ast.parse(RUNNER.read_text())
+    verify = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "verify_wrist_axis_signs"
+    )
+    argument_names = [argument.arg for argument in verify.args.args]
+    assert "robot_7" in argument_names
+    assert "robot_9" in argument_names
+
+    nested_writer = next(
+        node
+        for node in verify.body
+        if isinstance(node, ast.FunctionDef) and node.name == "write_and_measure"
+    )
+    nested_calls = [
+        node for node in ast.walk(nested_writer) if isinstance(node, ast.Call)
+    ]
+    stabilize_call = next(
+        node
+        for node in nested_calls
+        if ast.unparse(node.func) == "stabilize_precheck_pair"
+    )
+    stabilize_keywords = {
+        keyword.arg: ast.unparse(keyword.value)
+        for keyword in stabilize_call.keywords
+    }
+    assert stabilize_keywords == {
+        "red_robot": "robot_7",
+        "green_robot": "robot_9",
+        "red_position": "baseline_joint_pos_7",
+        "green_position": "position_9",
+        "red_zero_velocity": "zero_joint_vel_7",
+        "green_zero_velocity": "zero_joint_vel_9",
+        "red_zero_effort": "zero_joint_effort_7",
+        "green_zero_effort": "zero_joint_effort_9",
+    }
+    physics_step = next(
+        node
+        for node in nested_calls
+        if ast.unparse(node.func) == "sim.step"
+    )
+    assert stabilize_call.lineno < physics_step.lineno
+
+    verify_calls = [
+        node for node in ast.walk(verify) if isinstance(node, ast.Call)
+    ]
+    measured_positions = [
+        ast.unparse(node.args[0])
+        for node in verify_calls
+        if ast.unparse(node.func) == "write_and_measure"
+    ]
+    assert measured_positions == [
+        "pitch_trial",
+        "baseline_joint_pos_9",
+        "yaw_trial",
+        "baseline_joint_pos_9",
+    ]
+
+    restore_call = next(
+        node
+        for node in verify_calls
+        if ast.unparse(node.func) == "stabilize_precheck_pair"
+        and node is not stabilize_call
+    )
+    restore_keywords = {
+        keyword.arg: ast.unparse(keyword.value)
+        for keyword in restore_call.keywords
+    }
+    assert restore_call.lineno > max(
+        node.lineno
+        for node in verify_calls
+        if ast.unparse(node.func) == "write_and_measure"
+    )
+    assert restore_keywords == {
+        "red_robot": "robot_7",
+        "green_robot": "robot_9",
+        "red_position": "baseline_joint_pos_7",
+        "green_position": "baseline_joint_pos_9",
+        "red_zero_velocity": "zero_joint_vel_7",
+        "green_zero_velocity": "zero_joint_vel_9",
+        "red_zero_effort": "zero_joint_effort_7",
+        "green_zero_effort": "zero_joint_effort_9",
+    }
+
+    run_simulator = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_simulator"
+    )
+    call_site = next(
+        node
+        for node in ast.walk(run_simulator)
+        if isinstance(node, ast.Call)
+        and ast.unparse(node.func) == "verify_wrist_axis_signs"
+    )
+    assert [ast.unparse(argument) for argument in call_site.args[:4]] == [
+        "sim",
+        "scene",
+        "robot_7",
+        "robot_9",
+    ]
+
+
 def test_runner_separates_probe_contact_from_patient_collision():
     source = RUNNER.read_text()
 

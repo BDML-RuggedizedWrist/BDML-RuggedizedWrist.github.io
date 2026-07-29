@@ -37,6 +37,7 @@ from rizon_osc.validation_watchdog import (
     ValidationWatchdog,
     WatchdogSample,
 )
+from rizon_osc.wrist_axis_precheck import stabilize_precheck_pair
 
 from isaaclab.app import AppLauncher
 
@@ -465,34 +466,60 @@ def robot_state(
 def verify_wrist_axis_signs(
     sim: sim_utils.SimulationContext,
     scene: InteractiveScene,
-    robot: Articulation,
+    robot_7: Articulation,
+    robot_9: Articulation,
     ee_body_idx: int,
     controlled_joint_ids: list[int],
     task_frame_quat_b: torch.Tensor,
 ) -> WristAxisCheck:
     """Probe each green wrist joint in physics before OSC torque is enabled."""
     dt = sim.get_physics_dt()
-    baseline_joint_pos = robot.data.joint_pos.torch.clone()
-    zero_joint_vel = torch.zeros_like(robot.data.joint_vel.torch)
-    baseline_pose_b = robot_state(robot, ee_body_idx, controlled_joint_ids)[3].clone()
+    baseline_joint_pos_7 = robot_7.data.joint_pos.torch.clone()
+    baseline_joint_pos_9 = robot_9.data.joint_pos.torch.clone()
+    zero_joint_vel_7 = torch.zeros_like(robot_7.data.joint_vel.torch)
+    zero_joint_vel_9 = torch.zeros_like(robot_9.data.joint_vel.torch)
+    zero_joint_effort_7 = torch.zeros_like(baseline_joint_pos_7)
+    zero_joint_effort_9 = torch.zeros_like(baseline_joint_pos_9)
+    baseline_pose_b = robot_state(
+        robot_9, ee_body_idx, controlled_joint_ids
+    )[3].clone()
 
-    def write_and_measure(position: torch.Tensor) -> torch.Tensor:
-        robot.write_joint_position_to_sim_index(position=position)
-        robot.write_joint_velocity_to_sim_index(velocity=zero_joint_vel)
-        robot.write_data_to_sim()
+    def write_and_measure(position_9: torch.Tensor) -> torch.Tensor:
+        stabilize_precheck_pair(
+            red_robot=robot_7,
+            green_robot=robot_9,
+            red_position=baseline_joint_pos_7,
+            green_position=position_9,
+            red_zero_velocity=zero_joint_vel_7,
+            green_zero_velocity=zero_joint_vel_9,
+            red_zero_effort=zero_joint_effort_7,
+            green_zero_effort=zero_joint_effort_9,
+        )
         sim.step(render=False)
         scene.update(dt)
-        return robot_state(robot, ee_body_idx, controlled_joint_ids)[3].clone()
+        return robot_state(
+            robot_9, ee_body_idx, controlled_joint_ids
+        )[3].clone()
 
-    pitch_trial = baseline_joint_pos.clone()
+    pitch_trial = baseline_joint_pos_9.clone()
     pitch_trial[:, controlled_joint_ids[-2]] += math.radians(1.0)
     pitch_pose_b = write_and_measure(pitch_trial)
-    write_and_measure(baseline_joint_pos)
+    write_and_measure(baseline_joint_pos_9)
 
-    yaw_trial = baseline_joint_pos.clone()
+    yaw_trial = baseline_joint_pos_9.clone()
     yaw_trial[:, controlled_joint_ids[-1]] += math.radians(1.0)
     yaw_pose_b = write_and_measure(yaw_trial)
-    write_and_measure(baseline_joint_pos)
+    write_and_measure(baseline_joint_pos_9)
+    stabilize_precheck_pair(
+        red_robot=robot_7,
+        green_robot=robot_9,
+        red_position=baseline_joint_pos_7,
+        green_position=baseline_joint_pos_9,
+        red_zero_velocity=zero_joint_vel_7,
+        green_zero_velocity=zero_joint_vel_9,
+        red_zero_effort=zero_joint_effort_7,
+        green_zero_effort=zero_joint_effort_9,
+    )
 
     _, pitch_delta_b = compute_pose_error(
         baseline_pose_b[:, :3],
@@ -846,6 +873,7 @@ def run_simulator(
     wrist_axis_check = verify_wrist_axis_signs(
         sim,
         scene,
+        robot_7,
         robot_9,
         ee_9_idx,
         joints_9,
