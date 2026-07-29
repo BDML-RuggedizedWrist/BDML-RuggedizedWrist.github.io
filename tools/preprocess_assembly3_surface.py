@@ -94,7 +94,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--y-max", type=float, default=1.40)
     parser.add_argument("--resolution", type=float, default=0.004)
     parser.add_argument("--neighbor-radius", type=float, default=0.008)
-    parser.add_argument("--smooth-sigma-cells", type=float, default=1.25)
+    parser.add_argument(
+        "--smooth-sigma-cells",
+        type=float,
+        default=8.0,
+        help=(
+            "Gaussian smoothing for the clinical contact surface. Eight 4-mm "
+            "cells suppress STL facet jumps while retaining torso curvature."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -105,8 +113,14 @@ def main() -> None:
         raise FileNotFoundError(f"Assembly3 STL not found: {source}")
     if args.x_min >= args.x_max or args.y_min >= args.y_max:
         raise ValueError("ROI minimums must be below maximums")
-    if args.resolution <= 0.0 or args.neighbor_radius <= 0.0:
-        raise ValueError("resolution and neighbor radius must be positive")
+    if (
+        args.resolution <= 0.0
+        or args.neighbor_radius <= 0.0
+        or args.smooth_sigma_cells <= 0.0
+    ):
+        raise ValueError(
+            "resolution, neighbor radius, and smooth sigma must be positive"
+        )
 
     mesh = trimesh.load_mesh(source, process=False)
     if not isinstance(mesh, trimesh.Trimesh):

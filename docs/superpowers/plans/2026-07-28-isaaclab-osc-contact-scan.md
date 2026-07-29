@@ -163,8 +163,10 @@ torque = osc.compute(
 
 1. First add a source-contract test that fails until the runner directly imports/constructs/calls Isaac Lab OSC and uses its force/null-space arguments. The test forbids `WeightedOSC`.
 2. Migrate the current working two-robot scene.
-3. Attach `ContactSensorCfg` to each `linear_probe`, filtered to the matching Assembly3 torso collider.
-4. Convert/average sensor force exactly as the official Isaac Lab OSC tutorial does, then rotate it from world to the robot root. Verify sign against the 15 N task-frame command during headless tuning.
+3. Attach `ContactSensorCfg` to each `linear_probe`. Use its net-force history;
+   GPU PhysX does not support a filtered force matrix against this static
+   triangle patient.
+4. Convert/average net sensor force exactly as the official Isaac Lab OSC tutorial does, then rotate it from world to the robot root. Verify sign against the 15 N task-frame command during headless tuning.
 5. Send identical task pose/wrench commands to red and green OSC instances.
 6. Red controls Rizon joints 1–7 and locks supplemental joints 8–9. Green controls all nine. Both use the built-in null-space position control; green receives the distal-wrist policy target.
 7. Apply only magnitude/rate safety limits after `osc.compute()`. Do not add a custom torque objective.

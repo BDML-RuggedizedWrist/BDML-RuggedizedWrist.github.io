@@ -40,4 +40,3 @@ def test_scan_returns_wrist_to_neutral_without_changing_arm_reference():
 
     assert target[:7] == pytest.approx(start[:7])
     assert target[7:] == pytest.approx(np.zeros(2))
-

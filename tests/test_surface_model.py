@@ -82,4 +82,3 @@ def test_constructor_rejects_non_unit_or_wrong_shape_data():
             np.zeros((2, 2, 2)),
             np.ones((2, 2), dtype=bool),
         )
-

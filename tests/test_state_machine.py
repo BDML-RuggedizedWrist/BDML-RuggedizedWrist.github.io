@@ -1,4 +1,6 @@
-from rizon_osc.state_machine import ContactSupervisor, SafetyMode
+import pytest
+
+from rizon_osc.state_machine import ContactSupervisor, SafetyMode, phase_requires_contact
 
 
 def test_contact_loss_only_reacquires_after_100ms():
@@ -31,6 +33,7 @@ def test_stable_contact_resumes_after_reacquisition():
 
     assert state.mode is SafetyMode.TRACKING
     assert not state.freeze_path
+    assert state.max_contact_loss_duration == 0.03
 
 
 def test_invalid_surface_and_hard_force_freeze_path():
@@ -62,3 +65,32 @@ def test_non_contact_phase_does_not_accumulate_contact_loss():
     assert state.contact_loss_duration == 0.0
     assert state.reset_force_controller
 
+
+def test_approach_and_ramp_do_not_require_contact_but_scan_does():
+    assert not phase_requires_contact("APPROACH")
+    assert not phase_requires_contact("CONTACT_RAMP")
+    assert phase_requires_contact("SURFACE_SCAN")
+    assert phase_requires_contact("PITCH_ONLY")
+
+
+def test_contact_loss_peak_persists_after_contact_recovers():
+    supervisor = ContactSupervisor(contact_loss_limit=0.1)
+    for _ in range(12):
+        supervisor.update(
+            dt=0.01,
+            contact=False,
+            surface_valid=True,
+            measured_force=0.0,
+            contact_phase=True,
+        )
+
+    recovered = supervisor.update(
+        dt=0.01,
+        contact=True,
+        surface_valid=True,
+        measured_force=15.0,
+        contact_phase=True,
+    )
+
+    assert recovered.contact_loss_duration == 0.0
+    assert recovered.max_contact_loss_duration == pytest.approx(0.12)

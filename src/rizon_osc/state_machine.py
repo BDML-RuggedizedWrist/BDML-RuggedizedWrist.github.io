@@ -13,6 +13,11 @@ class SafetyMode(str, Enum):
     FORCE_HOLD = "FORCE_HOLD"
 
 
+def phase_requires_contact(phase: str) -> bool:
+    """Whether loss of contact should pause the nominal task clock."""
+    return str(phase) not in ("APPROACH", "CONTACT_RAMP")
+
+
 @dataclass(frozen=True)
 class SupervisorState:
     mode: SafetyMode
@@ -20,6 +25,7 @@ class SupervisorState:
     zero_force_command: bool
     reset_force_controller: bool
     contact_loss_duration: float
+    max_contact_loss_duration: float
 
 
 class ContactSupervisor:
@@ -38,6 +44,7 @@ class ContactSupervisor:
     def reset(self) -> None:
         self.mode = SafetyMode.TRACKING
         self.contact_loss_duration = 0.0
+        self.max_contact_loss_duration = 0.0
         self._stable_contact_duration = 0.0
 
     def update(
@@ -76,6 +83,9 @@ class ContactSupervisor:
         else:
             self._stable_contact_duration = 0.0
             self.contact_loss_duration += dt
+            self.max_contact_loss_duration = max(
+                self.max_contact_loss_duration, self.contact_loss_duration
+            )
             if self.contact_loss_duration > self.contact_loss_limit:
                 self.mode = SafetyMode.REACQUIRE
         return self._state()
@@ -92,4 +102,5 @@ class ContactSupervisor:
             zero_force_command=zero_force_command,
             reset_force_controller=reset_force_controller,
             contact_loss_duration=self.contact_loss_duration,
+            max_contact_loss_duration=self.max_contact_loss_duration,
         )

@@ -144,7 +144,7 @@ def _angular_velocity(rotation_minus: np.ndarray, rotation_plus: np.ndarray, dt:
 
 
 class SurfaceTrajectory:
-    """One upper-torso scan followed by repeating fixed-point reorientation."""
+    """One upper-torso scan followed by one fixed-point reorientation sequence."""
 
     def __init__(
         self,
@@ -159,6 +159,7 @@ class SurfaceTrajectory:
         neutral_duration: float = 0.5,
         yaw_duration: float = 1.0,
         approach_clearance: float = 0.005,
+        contact_preload: float = 0.002,
         target_force: float = 15.0,
         reorientation_angle: float = math.radians(25.0),
         derivative_dt: float = 1.0e-3,
@@ -194,10 +195,23 @@ class SurfaceTrajectory:
         self.neutral_duration = float(neutral_duration)
         self.yaw_duration = float(yaw_duration)
         self.approach_clearance = float(approach_clearance)
+        self.contact_preload = float(contact_preload)
         self.target_force = float(target_force)
         self.reorientation_angle = float(reorientation_angle)
         self.derivative_dt = float(derivative_dt)
         self._last_safe: TaskReference | None = None
+
+    @property
+    def total_duration(self) -> float:
+        """Time required to finish scan, both reorientations, and final settle."""
+        return (
+            self.approach_duration
+            + self.contact_ramp_duration
+            + self.scan_duration
+            + self.pitch_duration
+            + 2.0 * self.neutral_duration
+            + self.yaw_duration
+        )
 
     def reference(self, time_seconds: float) -> TaskReference:
         """Return a reference, holding the most recent safe one if geometry is invalid."""
@@ -236,8 +250,8 @@ class SurfaceTrajectory:
         normal = sample.normal
         planar_tangent = np.array(
             [
-                self.scan_end_xy[0] - self.scan_start_xy[0],
-                self.scan_end_xy[1] - self.scan_start_xy[1],
+                self.scan_start_xy[0] - self.scan_end_xy[0],
+                self.scan_start_xy[1] - self.scan_end_xy[1],
                 0.0,
             ]
         )
@@ -249,12 +263,20 @@ class SurfaceTrajectory:
         lateral /= np.linalg.norm(lateral)
         tangent = np.cross(normal, lateral)
         base_rotation = np.column_stack((lateral, tangent, normal))
-        rotation = base_rotation @ _rotation_from_rpy(*relative_rpy)
+        relative_rotation = _rotation_from_rpy(*relative_rpy)
+        rotation = base_rotation @ relative_rotation
         quaternion = quaternion_from_rotation_matrix(rotation)
 
         position = sample.point.copy()
         if phase is Phase.APPROACH:
             position += self.approach_clearance * normal
+        elif phase is Phase.CONTACT_RAMP:
+            ramp_progress, _, _ = quintic_progress(progress)
+            normal_offset = (
+                (1.0 - ramp_progress) * self.approach_clearance
+                - ramp_progress * self.contact_preload
+            )
+            position += normal_offset * normal
         return TaskReference(
             phase=phase,
             position=position,
@@ -290,14 +312,14 @@ class SurfaceTrajectory:
             u = (time_seconds - ramp_end) / self.scan_duration
             return Phase.SURFACE_SCAN, u, np.zeros(3), self.target_force
 
-        cycle_duration = (
+        sequence_duration = (
             self.pitch_duration + 2.0 * self.neutral_duration + self.yaw_duration
         )
-        if cycle_duration <= 0.0:
+        if sequence_duration <= 0.0:
             return Phase.RETURN_NEUTRAL, 0.0, np.zeros(3), self.target_force
-        cycle_time = (time_seconds - scan_end) % cycle_duration
-        if cycle_time < self.pitch_duration:
-            u = cycle_time / max(self.pitch_duration, 1.0e-12)
+        sequence_time = time_seconds - scan_end
+        if sequence_time < self.pitch_duration:
+            u = sequence_time / max(self.pitch_duration, 1.0e-12)
             pulse = math.sin(math.pi * u) ** 2
             return (
                 Phase.PITCH_ONLY,
@@ -305,12 +327,12 @@ class SurfaceTrajectory:
                 np.array([0.0, self.reorientation_angle * pulse, 0.0]),
                 self.target_force,
             )
-        cycle_time -= self.pitch_duration
-        if cycle_time < self.neutral_duration:
+        sequence_time -= self.pitch_duration
+        if sequence_time < self.neutral_duration:
             return Phase.RETURN_NEUTRAL, 0.0, np.zeros(3), self.target_force
-        cycle_time -= self.neutral_duration
-        if cycle_time < self.yaw_duration:
-            u = cycle_time / max(self.yaw_duration, 1.0e-12)
+        sequence_time -= self.neutral_duration
+        if sequence_time < self.yaw_duration:
+            u = sequence_time / max(self.yaw_duration, 1.0e-12)
             pulse = math.sin(math.pi * u) ** 2
             return (
                 Phase.YAW_ONLY,

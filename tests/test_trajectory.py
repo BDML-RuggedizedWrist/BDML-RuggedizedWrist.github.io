@@ -51,6 +51,31 @@ def test_surface_scan_uses_16cm_in_4_seconds(curved_surface):
     assert np.linalg.norm(end.linear_velocity) == pytest.approx(0.0, abs=1e-8)
 
 
+def test_contact_ramp_moves_continuously_from_clearance_to_preload(curved_surface):
+    trajectory = SurfaceTrajectory(
+        curved_surface,
+        scan_start_xy=(0.0, 0.02),
+        scan_end_xy=(0.0, 0.18),
+        approach_duration=1.0,
+        contact_ramp_duration=0.5,
+        approach_clearance=0.005,
+        contact_preload=0.002,
+    )
+    before_ramp = trajectory.reference(1.0 - 1.0e-6)
+    ramp_start = trajectory.reference(1.0)
+    ramp_end = trajectory.reference(1.5 - 1.0e-6)
+
+    start_offset = np.dot(
+        ramp_start.position - ramp_start.contact_point, ramp_start.surface_normal
+    )
+    end_offset = np.dot(
+        ramp_end.position - ramp_end.contact_point, ramp_end.surface_normal
+    )
+    assert ramp_start.position == pytest.approx(before_ramp.position, abs=1e-7)
+    assert start_offset == pytest.approx(0.005)
+    assert end_offset == pytest.approx(-0.002, abs=1e-7)
+
+
 def test_probe_axis_is_opposite_surface_normal_and_frame_is_orthonormal(curved_surface):
     trajectory = SurfaceTrajectory(
         curved_surface,
@@ -67,6 +92,21 @@ def test_probe_axis_is_opposite_surface_normal_and_frame_is_orthonormal(curved_s
     assert reference.probe_acoustic_axis == pytest.approx(-reference.surface_normal, abs=1e-7)
     assert np.isfinite(reference.twist).all()
     assert np.isfinite(reference.acceleration).all()
+
+
+def test_task_y_axis_opposes_scan_direction_to_match_probe_mount(curved_surface):
+    trajectory = SurfaceTrajectory(
+        curved_surface,
+        scan_start_xy=(0.0, 0.02),
+        scan_end_xy=(0.0, 0.18),
+        approach_duration=0.0,
+        contact_ramp_duration=0.0,
+    )
+    reference = trajectory.reference(1.0)
+    rotation = rotation_matrix_from_quaternion(reference.quaternion)
+    scan_direction = np.array([0.0, 1.0, 0.0])
+
+    assert np.dot(rotation[:, 1], scan_direction) < -0.9
 
 
 def test_fixed_contact_orientation_changes_one_axis_at_a_time(curved_surface):
@@ -95,6 +135,38 @@ def test_fixed_contact_orientation_changes_one_axis_at_a_time(curved_surface):
     assert pitch.contact_point == pytest.approx(yaw.contact_point)
 
 
+def test_reorientation_sequence_finishes_in_neutral_hold(curved_surface):
+    trajectory = SurfaceTrajectory(
+        curved_surface,
+        approach_duration=0.2,
+        contact_ramp_duration=0.5,
+        scan_duration=4.0,
+        pitch_duration=1.0,
+        neutral_duration=0.5,
+        yaw_duration=1.0,
+    )
+
+    final = trajectory.reference(100.0)
+
+    assert final.phase is Phase.RETURN_NEUTRAL
+    assert final.relative_rpy == pytest.approx(np.zeros(3))
+    assert final.contact_point[:2] == pytest.approx(trajectory.scan_end_xy)
+
+
+def test_total_duration_includes_final_neutral_settle(curved_surface):
+    trajectory = SurfaceTrajectory(
+        curved_surface,
+        approach_duration=0.2,
+        contact_ramp_duration=0.5,
+        scan_duration=4.0,
+        pitch_duration=1.0,
+        neutral_duration=0.5,
+        yaw_duration=1.0,
+    )
+
+    assert trajectory.total_duration == pytest.approx(7.7)
+
+
 def test_invalid_surface_query_holds_last_safe_reference(curved_surface):
     trajectory = SurfaceTrajectory(
         curved_surface,
@@ -109,4 +181,3 @@ def test_invalid_surface_query_holds_last_safe_reference(curved_surface):
     assert safe.valid
     assert not held.valid
     assert held.position == pytest.approx(safe.position)
-

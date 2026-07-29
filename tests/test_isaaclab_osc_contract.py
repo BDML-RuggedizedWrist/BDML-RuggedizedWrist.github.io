@@ -1,0 +1,58 @@
+from pathlib import Path
+
+
+RUNNER = Path(__file__).parents[1] / "scripts" / "run_osc_comparison.py"
+
+
+def test_runner_uses_isaaclab_operational_space_controller_directly():
+    source = RUNNER.read_text()
+
+    assert "from isaaclab.controllers import (" in source
+    assert "OperationalSpaceController" in source
+    assert "OperationalSpaceControllerCfg" in source
+    assert "OperationalSpaceController(" in source
+    assert ".compute(" in source
+    assert "WeightedOSC" not in source
+    assert "force-only J^T term" not in source
+
+
+def test_runner_uses_builtin_force_feedback_and_nullspace_interfaces():
+    source = RUNNER.read_text()
+
+    assert "contact_wrench_stiffness_task" in source
+    assert "current_ee_force_b=" in source
+    assert "nullspace_control=\"position\"" in source
+    assert "nullspace_joint_pos_target=" in source
+    assert "AcceptanceMetrics(force_target=args_cli.normal_force)" in source
+
+
+def test_runner_uses_official_net_contact_force_history():
+    source = RUNNER.read_text()
+
+    assert "sensor.data.net_forces_w_history" in source
+    assert "filter_prim_paths_expr=[" not in source
+    sensor_helper = source.split("def sensor_reaction_force_w", maxsplit=1)[1]
+    sensor_helper = sensor_helper.split("def task_tensors", maxsplit=1)[0]
+    assert "force_matrix_w_history" not in sensor_helper
+
+
+def test_relative_validation_report_is_anchored_to_project_root():
+    source = RUNNER.read_text()
+
+    assert "target = PROJECT_ROOT / target" in source
+
+
+def test_simulation_shutdown_preserves_validation_exit_code():
+    source = RUNNER.read_text()
+
+    assert "simulation_app.close(exit_code=exit_code)" in source
+
+
+def test_runtime_audits_actual_per_side_commands_and_safety_history():
+    source = RUNNER.read_text()
+
+    assert "commanded_force_7" in source
+    assert "commanded_force_9" in source
+    assert "torch.allclose(command_7, command_9)" in source
+    assert "max_contact_loss_duration" in source
+    assert "scenario_complete=" in source
