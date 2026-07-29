@@ -3,6 +3,9 @@ from pathlib import Path
 
 
 RUNNER = Path(__file__).parents[1] / "scripts" / "run_osc_comparison.py"
+REDUNDANCY_POLICY = (
+    Path(__file__).parents[1] / "src" / "rizon_osc" / "redundancy_policy.py"
+)
 
 
 def test_runner_uses_isaaclab_operational_space_controller_directly():
@@ -36,6 +39,23 @@ def test_runner_uses_tutorial_profile_without_local_osc_math():
     assert "torch.linalg.pinv" not in source
     assert "jacobian_b.mT @" not in source
     assert "nullspace_stiffness = 55.0" not in source
+
+
+def test_redundancy_policy_is_scheme_a_target_without_runtime_kinematics():
+    source = REDUNDANCY_POLICY.read_text()
+
+    assert "def initialize_run(" in source
+    assert "self._run_initial_wrist" in source
+    assert (
+        "target[: self.num_arm_joints] = self._phase_start_arm"
+        in source
+    )
+    assert "self._run_initial_wrist[0] - pitch" in source
+    assert "self._run_initial_wrist[1] + yaw" in source
+    assert "pinv(" not in source
+    assert "lstsq(" not in source
+    assert "jacobian" not in source.lower()
+    assert "projector" not in source.lower()
 
 
 def test_runner_shares_pre_collision_acquisition_command_and_task_frame():
