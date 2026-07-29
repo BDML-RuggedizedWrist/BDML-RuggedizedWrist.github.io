@@ -223,3 +223,41 @@ def test_effort_controlled_osc_joints_disable_implicit_drives():
         "stiffness": 0.0,
         "damping": 0.0,
     }
+
+
+def test_runner_initializes_green_policy_once_before_control_loop():
+    module = ast.parse(RUNNER.read_text())
+    run_simulator = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_simulator"
+    )
+    initialize_calls = [
+        node
+        for node in ast.walk(run_simulator)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "initialize_run"
+    ]
+    control_loop = next(
+        node for node in ast.walk(run_simulator) if isinstance(node, ast.While)
+    )
+
+    assert len(initialize_calls) == 1
+    initialize_call = initialize_calls[0]
+    assert initialize_call.lineno < control_loop.lineno
+    assert initialize_call not in set(ast.walk(control_loop))
+    assert ast.unparse(initialize_call.func.value) == "policy_9"
+    assert ast.unparse(initialize_call.args[0]) == (
+        "state_9[6][0].detach().cpu().numpy()"
+    )
+
+
+def test_phase_changes_do_not_recapture_the_run_initial_wrist():
+    source = RUNNER.read_text()
+    phase_block = source.split(
+        "if reference.phase.value != previous_phase:", maxsplit=1
+    )[1].split("green_null_target_np =", maxsplit=1)[0]
+
+    assert "policy_9.begin_phase(" in phase_block
+    assert "initialize_run(" not in phase_block

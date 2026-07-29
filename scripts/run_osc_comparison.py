@@ -811,6 +811,8 @@ def run_simulator(
         }
     state_7 = robot_state(robot_7, ee_7_idx, joints_7)
     state_9 = robot_state(robot_9, ee_9_idx, joints_9)
+    policy_9 = RedundancyPolicy()
+    policy_9.initialize_run(state_9[6][0].detach().cpu().numpy())
     initial_position_error, initial_orientation_error = compute_pose_error(
         state_7[3][:, :3],
         state_7[3][:, 3:7],
@@ -833,7 +835,6 @@ def run_simulator(
     stage = sim.stage
     fixed_initial = static_transform_snapshot(stage)
     markers = create_markers()
-    policy_9 = RedundancyPolicy()
     supervisor_7 = ContactSupervisor(contact_loss_limit=args_cli.contact_loss_limit)
     supervisor_9 = ContactSupervisor(contact_loss_limit=args_cli.contact_loss_limit)
     force_filter_7 = ContactForceFilter(history_length=4, low_pass_alpha=0.5)
