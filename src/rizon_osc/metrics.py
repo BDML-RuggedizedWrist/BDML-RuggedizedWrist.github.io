@@ -273,13 +273,27 @@ class AcceptanceMetrics:
                 }
             last = samples[-1]
             axis_accuracy = phase_accuracy(samples)
-            commands_identical = all(
+            pre_latch_samples = [
+                sample for sample in samples if not sample.collision_stop_7
+            ]
+            commands_identical = bool(pre_latch_samples) and all(
                 sample.references_identical
-                for sample in samples
-                if not sample.collision_stop_7
+                for sample in pre_latch_samples
+            )
+            force_commands_exact = bool(pre_latch_samples) and all(
+                abs(sample.commanded_force_7 - self.force_target) <= 1.0e-6
+                and abs(sample.commanded_force_9 - self.force_target) <= 1.0e-6
+                for sample in pre_latch_samples
             )
             completed = last.completed_7 and last.completed_9
-            if axis_accuracy and last.phase_arm_travel_7_rad > 1.0e-9:
+            reduction_eligible = (
+                axis_accuracy
+                and completed
+                and commands_identical
+                and force_commands_exact
+                and last.phase_arm_travel_7_rad > 1.0e-9
+            )
+            if reduction_eligible:
                 reduction_percent: float | None = 100.0 * (
                     1.0
                     - last.phase_arm_travel_9_rad / last.phase_arm_travel_7_rad

@@ -345,3 +345,74 @@ def test_missing_pre_latch_sample_cannot_satisfy_command_or_identity_gates():
 
     assert not report["force_command_7"]["pass"]
     assert not report["identical_references"]["pass"]
+
+
+def test_pitch_reduction_is_hidden_when_a_side_is_incomplete():
+    metrics = AcceptanceMetrics(settling_samples=0)
+    metrics.add(
+        passing_sample(
+            phase="PITCH_ONLY",
+            completed_9=False,
+            phase_arm_travel_7_rad=1.0,
+            phase_arm_travel_9_rad=0.4,
+        )
+    )
+
+    pitch = metrics.report(scenario_complete=True)["equal_accuracy_comparison"]["pitch"]
+
+    assert not pitch["completed"]
+    assert pitch["reduction_percent"] is None
+    assert not pitch["pass"]
+
+
+def test_yaw_reduction_is_hidden_when_pre_latch_references_differ():
+    metrics = AcceptanceMetrics(settling_samples=0)
+    metrics.add(
+        passing_sample(
+            phase="YAW_ONLY",
+            references_identical=False,
+            phase_arm_travel_7_rad=1.0,
+            phase_arm_travel_9_rad=0.4,
+        )
+    )
+
+    yaw = metrics.report(scenario_complete=True)["equal_accuracy_comparison"]["yaw"]
+
+    assert not yaw["commands_identical"]
+    assert yaw["reduction_percent"] is None
+    assert not yaw["pass"]
+
+
+def test_yaw_reduction_is_hidden_when_a_pre_latch_force_command_is_not_exact():
+    metrics = AcceptanceMetrics(settling_samples=0)
+    metrics.add(
+        passing_sample(
+            phase="YAW_ONLY",
+            commanded_force_9=0.0,
+            phase_arm_travel_7_rad=1.0,
+            phase_arm_travel_9_rad=0.4,
+        )
+    )
+
+    yaw = metrics.report(scenario_complete=True)["equal_accuracy_comparison"]["yaw"]
+
+    assert yaw["reduction_percent"] is None
+    assert not yaw["pass"]
+
+
+def test_pitch_reduction_is_hidden_without_a_pre_latch_sample():
+    metrics = AcceptanceMetrics(settling_samples=0)
+    metrics.add(
+        passing_sample(
+            phase="PITCH_ONLY",
+            collision_stop_7=True,
+            phase_arm_travel_7_rad=1.0,
+            phase_arm_travel_9_rad=0.4,
+        )
+    )
+
+    pitch = metrics.report(scenario_complete=True)["equal_accuracy_comparison"]["pitch"]
+
+    assert not pitch["commands_identical"]
+    assert pitch["reduction_percent"] is None
+    assert not pitch["pass"]
