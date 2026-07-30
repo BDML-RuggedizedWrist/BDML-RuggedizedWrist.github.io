@@ -90,6 +90,18 @@ parser.add_argument(
     default=0.1,
     help="Seconds without contact before path freeze; use a larger value only for diagnostics.",
 )
+parser.add_argument(
+    "--record_side",
+    choices=("7dof", "9dof", "both"),
+    default=None,
+    help="Isolate one setup and record a clean, matched side-view demo.",
+)
+parser.add_argument(
+    "--record_output",
+    type=Path,
+    default=None,
+    help="Viewport-only MP4 output. Requires --record_side and --max_steps.",
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 if args_cli.max_steps < 0:
@@ -100,6 +112,17 @@ if args_cli.force_gain < 0.0:
     parser.error("--force_gain must be nonnegative")
 if args_cli.contact_loss_limit <= 0.0:
     parser.error("--contact_loss_limit must be positive")
+if (args_cli.record_side is None) != (args_cli.record_output is None):
+    parser.error("--record_side and --record_output must be supplied together")
+if args_cli.record_output is not None and args_cli.max_steps <= 0:
+    parser.error("--record_output requires a positive --max_steps")
+if (
+    args_cli.record_side == "both"
+    and "{side}" not in str(args_cli.record_output)
+):
+    parser.error("--record_side both requires {side} in --record_output")
+if args_cli.record_output is not None:
+    args_cli.enable_cameras = True
 
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
@@ -116,7 +139,7 @@ from isaaclab.controllers import (
 from isaaclab.markers import VisualizationMarkers
 from isaaclab.markers.config import FRAME_MARKER_CFG, RED_ARROW_X_MARKER_CFG
 from isaaclab.scene import InteractiveScene, InteractiveSceneCfg
-from isaaclab.sensors import ContactSensor, ContactSensorCfg
+from isaaclab.sensors import CameraCfg, ContactSensor, ContactSensorCfg
 from isaaclab.utils.configclass import configclass
 from isaaclab.utils.math import (
     combine_frame_transforms,
@@ -130,6 +153,11 @@ from isaaclab.utils.math import (
     subtract_frame_transforms,
 )
 from pxr import Usd, UsdGeom
+from rizon_osc.demo_recording import (
+    CameraVideoRecorder,
+    isolate_comparison_side,
+    side_camera,
+)
 
 if not args_cli.headless:
     import omni.ui as ui
@@ -140,8 +168,12 @@ PATIENT_USD = args_cli.patient_usd.expanduser().resolve()
 SURFACE_MAP_PATH = args_cli.surface_map.expanduser().resolve()
 GROUND_USD = DEFAULT_PATHS.ground_usd
 
-ROBOT_Y_7 = -1.0
-ROBOT_Y_9 = 1.0
+# Keep the public comparison cameras identical while preventing the opposite
+# experiment from entering either frame.  The ordinary interactive layout stays
+# compact; recording mode only translates the two otherwise identical setups.
+_RECORDING_LATERAL_OFFSET = 6.0 if args_cli.record_side is not None else 1.0
+ROBOT_Y_7 = -_RECORDING_LATERAL_OFFSET
+ROBOT_Y_9 = _RECORDING_LATERAL_OFFSET
 ROBOT_ROOT_Z = 0.35
 # Registered from the exact Rizon/wrist/probe default pose: Assembly3's scan
 # start is 5 mm below the acoustic face, so approach begins without an
@@ -367,6 +399,33 @@ class ComparisonSceneCfg(InteractiveSceneCfg):
         track_air_time=True,
         force_threshold=0.5,
     )
+    if args_cli.record_output is not None:
+        recording_camera_7 = CameraCfg(
+            prim_path="{ENV_REGEX_NS}/RecordingCamera7",
+            update_period=0.0,
+            height=720,
+            width=1280,
+            data_types=["rgb"],
+            spawn=sim_utils.PinholeCameraCfg(
+                focal_length=25.0,
+                focus_distance=4.0,
+                horizontal_aperture=22.0,
+                clipping_range=(0.05, 100.0),
+            ),
+        )
+        recording_camera_9 = CameraCfg(
+            prim_path="{ENV_REGEX_NS}/RecordingCamera9",
+            update_period=0.0,
+            height=720,
+            width=1280,
+            data_types=["rgb"],
+            spawn=sim_utils.PinholeCameraCfg(
+                focal_length=25.0,
+                focus_distance=4.0,
+                horizontal_aperture=22.0,
+                clipping_range=(0.05, 100.0),
+            ),
+        )
 
 
 def make_pose_osc(device: str) -> OperationalSpaceController:
@@ -1072,7 +1131,7 @@ def run_simulator(
     latest_metric_values = np.empty(0, dtype=np.float64)
     hud_window = None
     hud_label = None
-    if not args_cli.headless:
+    if not args_cli.headless and args_cli.record_output is None:
         hud_window = ui.Window("OSC 7-DoF vs 9-DoF", width=520, height=220)
         with hud_window.frame:
             with ui.VStack():
@@ -1130,6 +1189,43 @@ def run_simulator(
     green_hold_null_target = state_9[6].clone()
     red_safety_event: dict[str, object] | None = None
     green_safety_event: dict[str, object] | None = None
+
+    recordings: list[CameraVideoRecorder] = []
+    if args_cli.record_side is not None:
+        if args_cli.record_side != "both":
+            isolate_comparison_side(
+                stage,
+                args_cli.record_side,
+                (
+                    "/Visuals/Current7",
+                    "/Visuals/Target7",
+                    "/Visuals/CommandForce7",
+                    "/Visuals/MeasuredForce7",
+                ),
+                (
+                    "/Visuals/Current9",
+                    "/Visuals/Target9",
+                    "/Visuals/CommandForce9",
+                    "/Visuals/MeasuredForce9",
+                ),
+            )
+        sides = (
+            ("7dof", ROBOT_Y_7, "recording_camera_7"),
+            ("9dof", ROBOT_Y_9, "recording_camera_9"),
+        )
+        for side, robot_y, camera_name in sides:
+            if args_cli.record_side not in (side, "both"):
+                continue
+            camera = scene[camera_name]
+            camera_eye, camera_target = side_camera(robot_y)
+            camera.set_world_poses_from_view(
+                torch.tensor([camera_eye], device=sim.device),
+                torch.tensor([camera_target], device=sim.device),
+            )
+            output_path = Path(
+                str(args_cli.record_output).format(side=side)
+            )
+            recordings.append(CameraVideoRecorder(camera, output_path))
 
     while simulation_app.is_running():
         state_7 = robot_state(robot_7, ee_7_idx, joints_7)
@@ -1529,6 +1625,8 @@ def run_simulator(
         sim.step(render=not args_cli.headless)
         scene.update(dt)
         step_count += 1
+        for recording in recordings:
+            recording.capture(step_count)
         if not green_safety_latched and not last_supervisor_9.freeze_path:
             task_time = min(task_time + dt, trajectory.total_duration)
         if (
@@ -1914,6 +2012,8 @@ def run_simulator(
         if args_cli.max_steps > 0 and step_count >= args_cli.max_steps:
             break
 
+    for recording in recordings:
+        recording.finish()
     scenario_complete = task_time + 0.5 * dt >= trajectory.total_duration
     report = metrics.report(scenario_complete=scenario_complete)
     report["controller"] = (
@@ -1995,8 +2095,19 @@ def main() -> int:
         use_fabric=True,
     )
     sim = sim_utils.SimulationContext(sim_cfg)
-    sim.set_camera_view(eye=(2.9, 3.6, 2.15), target=(0.55, -0.20, 0.60))
+    if args_cli.record_side is None:
+        sim.set_camera_view(
+            eye=(2.9, 3.6, 2.15), target=(0.55, -0.20, 0.60)
+        )
+    else:
+        robot_y = ROBOT_Y_7 if args_cli.record_side == "7dof" else ROBOT_Y_9
+        eye, target = side_camera(robot_y)
+        sim.set_camera_view(eye=eye, target=target)
     scene = InteractiveScene(ComparisonSceneCfg(num_envs=1, env_spacing=3.0))
+    if args_cli.record_side not in (None, "both"):
+        isolate_comparison_side(
+            sim.stage, args_cli.record_side, (), ()
+        )
     collision_sensors_7 = make_patient_collision_sensors("7")
     collision_sensors_9 = make_patient_collision_sensors("9")
     watchdog_collision_sensors_7 = (
