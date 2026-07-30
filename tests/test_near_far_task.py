@@ -136,6 +136,25 @@ def test_green_policy_freezes_far_arm_and_assigns_pitch_and_axial_to_wrist():
     assert axial_target[8] == pytest.approx(initial[8] + np.deg2rad(90.0))
 
 
+def test_green_policy_lets_arm_move_before_far_point_while_neutralizing_wrist():
+    initial = np.array([0.0, -0.7, 0.0, 1.57, 0.0, 0.7, 0.0, 0.1, -0.2])
+    moving = initial + np.array(
+        [0.3, 0.2, -0.1, 0.15, 0.05, -0.08, 0.03, 0.4, -0.5]
+    )
+    policy = NearFarRedundancyPolicy()
+    policy.initialize(initial)
+
+    target = policy.target(
+        moving,
+        phase=NearFarPhase.SCAN_NEAR_TO_FAR,
+        relative_pitch=0.0,
+        relative_axial=0.0,
+    )
+
+    assert target[:7] == pytest.approx(moving[:7])
+    assert target[7:] == pytest.approx(initial[7:])
+
+
 def test_independent_runner_uses_only_official_isaaclab_osc_for_active_torques():
     source = RUNNER.read_text()
 

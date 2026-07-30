@@ -28,6 +28,8 @@ class NearFarPhase(str, Enum):
     SETTLE_FAR = "SETTLE_FAR"
     PITCH_ONLY = "PITCH_ONLY"
     RETURN_PITCH = "RETURN_PITCH"
+    ROLL_ONLY = "ROLL_ONLY"
+    RETURN_ROLL = "RETURN_ROLL"
     AXIAL_SLICE_90 = "AXIAL_SLICE_90"
     HOLD_FINAL_SLICE = "HOLD_FINAL_SLICE"
 
@@ -46,6 +48,7 @@ class NearFarTrajectory:
         *,
         near_xy: tuple[float, float],
         far_xy: tuple[float, float],
+        orientation_direction_xy: tuple[float, float] | None = None,
         approach_duration: float = 0.8,
         contact_ramp_duration: float = 0.8,
         scan_duration: float = 2.5,
@@ -54,6 +57,7 @@ class NearFarTrajectory:
         return_pitch_duration: float = 0.8,
         axial_slice_duration: float = 2.0,
         pitch_angle: float = math.radians(-35.0),
+        bend_axis: str = "pitch",
         axial_slice_angle: float = math.radians(90.0),
         approach_clearance: float = 0.005,
         contact_preload: float = 0.001,
@@ -82,6 +86,15 @@ class NearFarTrajectory:
             raise ValueError("near_xy and far_xy must each contain x and y")
         if np.allclose(self.near_xy, self.far_xy):
             raise ValueError("near and far endpoints must be different")
+        if orientation_direction_xy is None:
+            direction = self.far_xy - self.near_xy
+        else:
+            direction = np.asarray(orientation_direction_xy, dtype=np.float64)
+            if direction.shape != (2,):
+                raise ValueError("orientation_direction_xy must contain x and y")
+        if not np.isfinite(direction).all() or np.linalg.norm(direction) <= 1.0e-12:
+            raise ValueError("orientation direction must be finite and nonzero")
+        self.orientation_direction_xy = direction.copy()
 
         self.approach_duration = float(approach_duration)
         self.contact_ramp_duration = float(contact_ramp_duration)
@@ -91,6 +104,9 @@ class NearFarTrajectory:
         self.return_pitch_duration = float(return_pitch_duration)
         self.axial_slice_duration = float(axial_slice_duration)
         self.pitch_angle = float(pitch_angle)
+        if bend_axis not in ("roll", "pitch"):
+            raise ValueError("bend_axis must be 'roll' or 'pitch'")
+        self.bend_axis = bend_axis
         self.axial_slice_angle = float(axial_slice_angle)
         self.approach_clearance = float(approach_clearance)
         self.contact_preload = float(contact_preload)
@@ -146,6 +162,23 @@ class NearFarTrajectory:
     def _phase_values(
         self, time_seconds: float
     ) -> tuple[NearFarPhase, float, np.ndarray, float]:
+        bend_index = 0 if self.bend_axis == "roll" else 1
+        bend_phase = (
+            NearFarPhase.ROLL_ONLY
+            if self.bend_axis == "roll"
+            else NearFarPhase.PITCH_ONLY
+        )
+        return_bend_phase = (
+            NearFarPhase.RETURN_ROLL
+            if self.bend_axis == "roll"
+            else NearFarPhase.RETURN_PITCH
+        )
+
+        def bend_rpy(angle: float) -> np.ndarray:
+            value = np.zeros(3, dtype=np.float64)
+            value[bend_index] = angle
+            return value
+
         approach_end = self.approach_duration
         ramp_end = approach_end + self.contact_ramp_duration
         scan_end = ramp_end + self.scan_duration
@@ -177,18 +210,18 @@ class NearFarTrajectory:
             u = (time_seconds - settle_end) / self.pitch_duration
             progress, _, _ = quintic_progress(u)
             return (
-                NearFarPhase.PITCH_ONLY,
+                bend_phase,
                 u,
-                np.array([0.0, self.pitch_angle * progress, 0.0]),
+                bend_rpy(self.pitch_angle * progress),
                 self.target_force,
             )
         if self.return_pitch_duration > 0.0 and time_seconds < return_end:
             u = (time_seconds - pitch_end) / self.return_pitch_duration
             progress, _, _ = quintic_progress(u)
             return (
-                NearFarPhase.RETURN_PITCH,
+                return_bend_phase,
                 u,
-                np.array([0.0, self.pitch_angle * (1.0 - progress), 0.0]),
+                bend_rpy(self.pitch_angle * (1.0 - progress)),
                 self.target_force,
             )
         if self.axial_slice_duration > 0.0 and time_seconds <= axial_end:
@@ -222,7 +255,11 @@ class NearFarTrajectory:
             return None
         normal = sample.normal
         scan_direction = np.array(
-            [self.far_xy[0] - self.near_xy[0], self.far_xy[1] - self.near_xy[1], 0.0]
+            [
+                self.orientation_direction_xy[0],
+                self.orientation_direction_xy[1],
+                0.0,
+            ]
         )
         tangent = -scan_direction - np.dot(-scan_direction, normal) * normal
         if np.linalg.norm(tangent) < 1.0e-9:

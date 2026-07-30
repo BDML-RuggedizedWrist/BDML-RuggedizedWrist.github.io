@@ -22,6 +22,7 @@ from rizon_osc.force_control import ContactForceFilter
 from rizon_osc.near_far_policy import NearFarRedundancyPolicy
 from rizon_osc.near_far_trajectory import NearFarPhase, NearFarTrajectory
 from rizon_osc.osc_profile import hybrid_osc_kwargs, pose_osc_kwargs
+from rizon_osc.scan_profiles import scan_profile
 from rizon_osc.scene_assets import AssetPaths
 from rizon_osc.state_machine import ContactSupervisor
 from rizon_osc.surface_model import SurfaceMap
@@ -45,6 +46,12 @@ parser.add_argument(
 )
 parser.add_argument("--normal_force", type=float, default=15.0)
 parser.add_argument("--force_gain", type=float, default=0.8)
+parser.add_argument(
+    "--task_variant",
+    choices=("near_to_far", "cross_waist"),
+    default="near_to_far",
+    help="Select the independent contact path while sharing the OSC runtime.",
+)
 parser.add_argument("--robot_usd", type=Path, default=DEFAULT_PATHS.robot_wrapper)
 parser.add_argument("--patient_usd", type=Path, default=DEFAULT_PATHS.patient_usd)
 parser.add_argument("--surface_map", type=Path, default=DEFAULT_PATHS.surface_map)
@@ -478,6 +485,8 @@ def verify_wrist_axis_signs(
     ee_body_idx: int,
     controlled_joint_ids: list[int],
     task_frame_quat_b: torch.Tensor,
+    bend_axis_index: int,
+    bend_axis_sign: float,
 ) -> WristAxisCheck:
     """Restore both robots while measuring the authored J8/J9 task-frame signs."""
     dt = sim.get_physics_dt()
@@ -540,7 +549,8 @@ def verify_wrist_axis_signs(
     pitch_delta_task = quat_apply_inverse(task_frame_quat_b, pitch_delta_b)
     axial_delta_task = quat_apply_inverse(task_frame_quat_b, axial_delta_b)
     passed = bool(
-        pitch_delta_task[0, 1] < -math.radians(0.5)
+        bend_axis_sign * pitch_delta_task[0, bend_axis_index]
+        > math.radians(0.5)
         and axial_delta_task[0, 2] > math.radians(0.5)
     )
     return WristAxisCheck(
@@ -664,22 +674,6 @@ def create_markers() -> dict[str, VisualizationMarkers]:
     return markers
 
 
-def choose_near_far(surface: SurfaceMap) -> tuple[tuple[float, float], tuple[float, float]]:
-    """Use the calibrated Assembly3 scan-start to scan-end ordering.
-
-    The robot's initial joint pose and patient transform are registered to
-    ``scan_start_xy``.  A planar base-distance comparison is misleading here
-    because reach depends on the full arm configuration, not only XY distance.
-    """
-    near = np.asarray(
-        surface.metadata.get("scan_start_xy", [0.0, 1.18]), dtype=np.float64
-    )
-    far = np.asarray(
-        surface.metadata.get("scan_end_xy", [0.0, 1.34]), dtype=np.float64
-    )
-    return tuple(near.tolist()), tuple(far.tolist())
-
-
 def run_simulator(
     sim: sim_utils.SimulationContext,
     scene: InteractiveScene,
@@ -697,25 +691,35 @@ def run_simulator(
     joints_9 = robot_9.find_joints(["joint[1-7]", "wrist_.*_joint"])[0]
     locked_wrist_ids = robot_7.find_joints("wrist_.*_joint")[0]
 
-    near_xy, far_xy = choose_near_far(surface)
+    profile = scan_profile(
+        surface,
+        task_variant=args_cli.task_variant,
+        surface_translation_xy=tuple(SURFACE_TRANSLATION_B[:2].tolist()),
+    )
+    near_xy, far_xy = profile.start_xy, profile.end_xy
     trajectory = NearFarTrajectory(
         surface,
         near_xy=near_xy,
         far_xy=far_xy,
+        orientation_direction_xy=profile.orientation_direction_xy,
         target_force=args_cli.normal_force,
         approach_duration=1.0,
         contact_ramp_duration=1.0,
-        scan_duration=2.0,
+        scan_duration=profile.scan_duration,
         settle_duration=0.4,
         pitch_duration=1.5,
         return_pitch_duration=0.8,
         axial_slice_duration=2.0,
-        pitch_angle=math.radians(-35.0),
-        axial_slice_angle=math.radians(90.0),
+        pitch_angle=profile.bend_angle,
+        bend_axis=profile.bend_axis,
+        axial_slice_angle=profile.axial_slice_angle,
     )
-    print("[INFO] Independent task: near torso end -> far torso end")
+    print(f"[INFO] Independent task: {profile.description}")
     print(f"[INFO] near_xy={near_xy}, far_xy={far_xy}")
-    print("[INFO] Far point: 15 N, pitch only, return, then probe-axis +90 deg")
+    print(
+        f"[INFO] Far point: 15 N, {profile.bend_axis} only, "
+        "return, then probe-axis +90 deg"
+    )
     print("[INFO] Controller: isaaclab.controllers.OperationalSpaceController")
     print("[INFO] RED has J1-J7; GREEN far-point arm null target stays fixed")
     print("[INFO] MAGENTA=commanded force, CYAN=measured force")
@@ -759,6 +763,8 @@ def run_simulator(
         ee_9_idx,
         joints_9,
         initial_task_frame_b[:, 3:7],
+        bend_axis_index=0 if profile.bend_axis == "roll" else 1,
+        bend_axis_sign=profile.wrist_bend_sign,
     )
     print(
         "[VALIDATION] wrist-axis signs pitch(task xyz)="
@@ -786,7 +792,9 @@ def run_simulator(
         f"{1000.0 * torch.linalg.norm(initial_position_error).item():.3f} mm, "
         f"{math.degrees(torch.linalg.norm(initial_rotation_error).item()):.3f} deg"
     )
-    policy_9 = NearFarRedundancyPolicy()
+    policy_9 = NearFarRedundancyPolicy(
+        wrist_bend_sign=profile.wrist_bend_sign
+    )
     policy_9.initialize(state_9[6][0].detach().cpu().numpy())
     null_target_7 = state_7[6].clone()
 
@@ -936,7 +944,11 @@ def run_simulator(
             policy_9.target(
                 state_9[6][0].detach().cpu().numpy(),
                 phase=reference.phase,
-                relative_pitch=float(reference.relative_rpy[1]),
+                relative_pitch=float(
+                    reference.relative_rpy[
+                        0 if profile.bend_axis == "roll" else 1
+                    ]
+                ),
                 relative_axial=float(reference.relative_rpy[2]),
             )[None, :],
             dtype=state_9[6].dtype,
@@ -1246,6 +1258,7 @@ def run_simulator(
     )
     summary = {
         "controller": "isaaclab.controllers.OperationalSpaceController",
+        "task_variant": args_cli.task_variant,
         "physics_steps": step_count,
         "task_time_s": task_time,
         "trajectory_duration_s": trajectory.total_duration,
@@ -1291,7 +1304,7 @@ def main() -> int:
     collision_sensors_9 = make_patient_collision_sensors("9")
     sim.reset()
     scene.update(sim.get_physics_dt())
-    print("[INFO] Fixed Assembly3 near-to-far scene ready.")
+    print(f"[INFO] Fixed Assembly3 {args_cli.task_variant} scene ready.")
     run_simulator(
         sim,
         scene,

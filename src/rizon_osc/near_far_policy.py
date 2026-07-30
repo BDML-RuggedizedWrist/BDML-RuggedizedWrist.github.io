@@ -15,10 +15,18 @@ class NearFarRedundancyPolicy:
     pseudoinverses, Jacobian projectors, or joint commands.
     """
 
-    def __init__(self, num_arm_joints: int = 7) -> None:
+    def __init__(
+        self,
+        num_arm_joints: int = 7,
+        *,
+        wrist_bend_sign: float = -1.0,
+    ) -> None:
         self.num_arm_joints = int(num_arm_joints)
         if self.num_arm_joints < 1:
             raise ValueError("num_arm_joints must be positive")
+        if wrist_bend_sign not in (-1.0, 1.0):
+            raise ValueError("wrist_bend_sign must be -1 or +1")
+        self.wrist_bend_sign = float(wrist_bend_sign)
         self._initial_wrist: np.ndarray | None = None
         self._moving_arm_target: np.ndarray | None = None
         self._far_arm_target: np.ndarray | None = None
@@ -66,22 +74,23 @@ class NearFarRedundancyPolicy:
         relative_pitch: float,
         relative_axial: float,
     ) -> np.ndarray:
-        self._validate(current_joint_position)
+        current_position = self._validate(current_joint_position)
         if self._initial_wrist is None or self._moving_arm_target is None:
             raise RuntimeError("initialize must be called first")
         phase = NearFarPhase(phase)
+        fixed_point_phase = phase in (
+            NearFarPhase.SETTLE_FAR,
+            NearFarPhase.PITCH_ONLY,
+            NearFarPhase.RETURN_PITCH,
+            NearFarPhase.ROLL_ONLY,
+            NearFarPhase.RETURN_ROLL,
+            NearFarPhase.AXIAL_SLICE_90,
+            NearFarPhase.HOLD_FINAL_SLICE,
+        )
         arm_target = (
             self._far_arm_target
-            if phase
-            in (
-                NearFarPhase.SETTLE_FAR,
-                NearFarPhase.PITCH_ONLY,
-                NearFarPhase.RETURN_PITCH,
-                NearFarPhase.AXIAL_SLICE_90,
-                NearFarPhase.HOLD_FINAL_SLICE,
-            )
-            and self._far_arm_target is not None
-            else self._moving_arm_target
+            if fixed_point_phase and self._far_arm_target is not None
+            else current_position[: self.num_arm_joints]
         )
         pitch = float(relative_pitch)
         axial = float(relative_axial)
@@ -89,6 +98,6 @@ class NearFarRedundancyPolicy:
             raise ValueError("relative orientation must be finite")
         target = np.empty(self.joint_count, dtype=np.float64)
         target[: self.num_arm_joints] = arm_target
-        target[-2] = self._initial_wrist[0] - pitch
+        target[-2] = self._initial_wrist[0] + self.wrist_bend_sign * pitch
         target[-1] = self._initial_wrist[1] + axial
         return target
