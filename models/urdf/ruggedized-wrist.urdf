@@ -1,185 +1,1788 @@
-<?xml version="1.0"?>
-<!--
-  Browser model derived only from the Onshape assembly_1 URDF export.
-  Every visible mesh comes from that export; no probe or generated primitive
-  geometry is included.
--->
+<?xml version='1.0' encoding='utf-8'?>
 <robot name="ruggedized_wrist_onshape">
+  <!-- Original Onshape STL triangles only: no GLB, merging, decimation, remeshing, probe, or generated primitive geometry. -->
   <material name="imported_motor">
-    <color rgba="0.91 0.91 0.91 1"/>
+    <color rgba="0.91 0.91 0.91 1" />
   </material>
   <material name="base_finish">
-    <color rgba="0.501961 0.486275 0.439216 1"/>
+    <color rgba="0.501961 0.486275 0.439216 1" />
   </material>
   <material name="machined_finish">
-    <color rgba="0.901961 0.878431 0.811765 1"/>
+    <color rgba="0.901961 0.878431 0.811765 1" />
   </material>
   <material name="pulley_finish">
-    <color rgba="0.917647 0.917647 0.917647 1"/>
+    <color rgba="0.917647 0.917647 0.917647 1" />
   </material>
   <material name="gecko_finish">
-    <color rgba="0.35 0.43 0.31 1"/>
+    <color rgba="0.35 0.43 0.31 1" />
   </material>
-
-  <link name="root"/>
-
+  <link name="root" />
   <link name="wrist_base">
     <visual>
       <geometry>
-        <mesh filename="meshes/base.glb?v=20260731-cad-clear-3"/>
+        <mesh filename="original-stl-v1/Base.stl" />
       </geometry>
-      <material name="base_finish"/>
+      <material name="base_finish" />
     </visual>
   </link>
-
   <joint name="root_to_base" type="fixed">
-    <parent link="root"/>
-    <child link="wrist_base"/>
-    <origin xyz="0 -0.00025 0.04545"/>
+    <parent link="root" />
+    <child link="wrist_base" />
+    <origin xyz="0 -0.00025 0.04545" />
   </joint>
-
   <link name="mount_to_arm">
     <visual>
-      <origin xyz="0 -0.00025 0.0298"/>
+      <origin xyz="0 -0.00025 0.0298" />
       <geometry>
-        <mesh filename="meshes/mount-to-arm.glb?v=20260731-cad-clear-3"/>
+        <mesh filename="original-stl-v1/mountToArm.stl" />
       </geometry>
-      <material name="machined_finish"/>
+      <material name="machined_finish" />
     </visual>
   </link>
-
   <joint name="base_to_mount" type="fixed">
-    <parent link="wrist_base"/>
-    <child link="mount_to_arm"/>
-    <origin xyz="0 0.00025 -0.0298"/>
+    <parent link="wrist_base" />
+    <child link="mount_to_arm" />
+    <origin xyz="0 0.00025 -0.0298" />
   </joint>
-
   <link name="pitch_motor">
     <visual>
-      <origin xyz="-0.0223882 -0.033 -0.0159693"/>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
       <geometry>
-        <mesh filename="meshes/pitch-motor.glb?v=20260731-cad-clear-3"/>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047.stl" />
       </geometry>
-      <material name="imported_motor"/>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_1.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_2.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_3.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_4.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_5.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_6.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_7.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_8.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_9.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_10.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_11.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_12.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_13.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_14.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_15.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_16.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_17.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_18.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_19.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_20.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_21.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_22.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_23.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_24.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_25.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_26.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_27.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_28.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_29.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_30.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_31.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_32.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_33.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_34.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_35.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_36.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_37.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_38.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_39.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_40.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_41.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_42.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_43.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_44.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_45.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_46.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_47.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_48.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_49.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_50.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_51.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_52.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_53.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_54.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_55.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_56.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_57.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_58.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_59.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_60.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_61.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_62.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_63.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_64.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_65.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_66.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_67.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_68.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_69.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_70.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_71.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_72.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_73.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_74.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_75.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_76.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_77.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_78.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_79.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_80.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_81.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_82.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_83.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_84.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_85.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_86.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_87.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_88.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_89.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_90.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_91.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_92.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_93.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_94.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_95.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_96.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_97.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_98.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_99.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_100.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_101.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_102.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_103.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/______a5047.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/______5048a5047.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/KAA15CL0a5047.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/____5048A5047.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/______5048a5047_1.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_104.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/______5048a5047_2.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_105.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_106.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_107.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_108.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_109.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_110.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_111.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_112.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_113.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_114.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_115.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_116.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_117.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_118.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_119.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_120.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_121.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_122.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_123.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_124.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_125.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_126.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_127.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_128.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_129.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_130.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_131.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_132.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_133.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_134.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_135.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_136.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_137.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_138.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_139.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_140.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_141.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_142.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_143.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_144.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_145.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_146.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_147.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_148.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_149.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_150.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_151.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_152.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_153.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_154.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_155.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_156.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_157.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_158.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_159.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_160.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_161.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_162.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_163.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_164.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_165.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_166.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_167.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_168.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_169.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_170.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_171.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_172.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_173.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_174.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_175.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_176.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_177.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_178.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_179.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_180.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_181.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_182.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_183.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_184.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_185.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_186.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_187.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_188.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_189.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_190.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_191.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_192.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_193.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_194.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_195.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_196.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_197.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_198.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_199.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_200.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_201.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_202.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_203.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_204.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_205.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_206.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_207.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_208.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_209.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_210.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_211.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_212.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_213.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_214.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_215.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_216.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_217.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_218.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_219.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_220.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0223882 -0.033 -0.0159693" />
+      <geometry>
+        <mesh filename="original-stl-v1/_3D______5044_5600_6709_2023_10_245047_221.stl" />
+      </geometry>
+      <material name="imported_motor" />
     </visual>
   </link>
-
   <joint name="base_to_pitch_motor" type="fixed">
-    <parent link="wrist_base"/>
-    <child link="pitch_motor"/>
-    <origin xyz="0.0223882 0.0334 0.0159693"/>
+    <parent link="wrist_base" />
+    <child link="pitch_motor" />
+    <origin xyz="0.0223882 0.0334 0.0159693" />
   </joint>
-
   <link name="pitch_pulley_connector">
     <visual>
-      <origin xyz="0 0.0141 0" rpy="0 -0.0947442 0"/>
+      <origin xyz="0 0.0141 0" rpy="0 -0.0947442 0" />
       <geometry>
-        <mesh filename="meshes/pitch-pulley-connector.glb?v=20260731-cad-clear-3"/>
+        <mesh filename="original-stl-v1/PitchMotorPulleyConnector.stl" />
       </geometry>
-      <material name="machined_finish"/>
+      <material name="machined_finish" />
     </visual>
   </link>
-
   <joint name="pitch_drive_fixed" type="fixed">
-    <parent link="pitch_motor"/>
-    <child link="pitch_pulley_connector"/>
-    <origin xyz="-0.0223882 -0.0471 -0.0159693"/>
+    <parent link="pitch_motor" />
+    <child link="pitch_pulley_connector" />
+    <origin xyz="-0.0223882 -0.0471 -0.0159693" />
   </joint>
-
   <link name="pitch_pulley">
     <visual>
-      <origin xyz="0 0.024 0"/>
+      <origin xyz="0 0.024 0" />
       <geometry>
-        <mesh filename="meshes/pitch-pulley.glb?v=20260731-cad-clear-3"/>
+        <mesh filename="original-stl-v1/PitchMotorPulley.stl" />
       </geometry>
-      <material name="pulley_finish"/>
+      <material name="pulley_finish" />
     </visual>
   </link>
-
   <joint name="connector_to_pulley" type="fixed">
-    <parent link="pitch_pulley_connector"/>
-    <child link="pitch_pulley"/>
-    <origin xyz="0 -0.0099 0" rpy="0 -0.0947442 0"/>
+    <parent link="pitch_pulley_connector" />
+    <child link="pitch_pulley" />
+    <origin xyz="0 -0.0099 0" rpy="0 -0.0947442 0" />
   </joint>
-
-  <!-- J8 uses the exported pitch-axis mate and its original CAD bracket. -->
   <link name="roll_motor_bracket">
     <visual>
-      <origin xyz="0.00572345 -0.032 -0.0602287"
-              rpy="0 -0.0947442 0"/>
+      <origin xyz="0.00572345 -0.032 -0.0602287" rpy="0 -0.0947442 0" />
       <geometry>
-        <mesh filename="meshes/roll-motor-bracket.glb?v=20260731-cad-clear-3"/>
+        <mesh filename="original-stl-v1/RollMotorBracket.stl" />
       </geometry>
-      <material name="machined_finish"/>
+      <material name="machined_finish" />
     </visual>
   </link>
-
   <joint name="wrist_pitch_joint" type="revolute">
-    <parent link="wrist_base"/>
-    <child link="roll_motor_bracket"/>
-    <origin xyz="0 0.0324 0.0605"/>
-    <axis xyz="0 1 0"/>
-    <limit lower="-1.570796" upper="1.570796"
-           effort="12" velocity="2"/>
+    <parent link="wrist_base" />
+    <child link="roll_motor_bracket" />
+    <origin xyz="0 0.0324 0.0605" />
+    <axis xyz="0 1 0" />
+    <limit lower="-1.570796" upper="1.570796" effort="12" velocity="2" />
   </joint>
-
   <link name="roll_motor_housing">
     <visual>
-      <origin xyz="-0.0192142 -0.0143099 -0.03755"/>
+      <origin xyz="-0.0192142 -0.0143099 -0.03755" />
       <geometry>
-        <mesh filename="meshes/roll-motor-housing.glb?v=20260731-cad-clear-3"/>
+        <mesh filename="original-stl-v1/_______1.stl" />
       </geometry>
-      <material name="imported_motor"/>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0192142 -0.0143099 -0.03755" />
+      <geometry>
+        <mesh filename="original-stl-v1/_2____44380227.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0192142 -0.0143099 -0.03755" />
+      <geometry>
+        <mesh filename="original-stl-v1/_303740227.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0192142 -0.0143099 -0.03755" />
+      <geometry>
+        <mesh filename="original-stl-v1/____44380227.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0192142 -0.0143099 -0.03755" />
+      <geometry>
+        <mesh filename="original-stl-v1/____44380227_1.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0192142 -0.0143099 -0.03755" />
+      <geometry>
+        <mesh filename="original-stl-v1/______.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0192142 -0.0143099 -0.03755" />
+      <geometry>
+        <mesh filename="original-stl-v1/______44380227_1.stl" />
+      </geometry>
+      <material name="imported_motor" />
+    </visual>
+    <visual>
+      <origin xyz="-0.0192142 -0.0143099 -0.03755" />
+      <geometry>
+        <mesh filename="original-stl-v1/__________4438.stl" />
+      </geometry>
+      <material name="imported_motor" />
     </visual>
   </link>
-
   <joint name="bracket_to_roll_motor" type="fixed">
-    <parent link="roll_motor_bracket"/>
-    <child link="roll_motor_housing"/>
-    <origin xyz="0.0212802 -0.0176901 -0.0208303"
-            rpy="0 -0.0947442 0"/>
+    <parent link="roll_motor_bracket" />
+    <child link="roll_motor_housing" />
+    <origin xyz="0.0212802 -0.0176901 -0.0208303" rpy="0 -0.0947442 0" />
   </joint>
-
-  <!--
-    J9 rotates only the central cylindrical output from the Onshape roll motor.
-    The surrounding square housing remains fixed.
-    The visual offset exactly cancels the joint offset at zero angle, so the
-    neutral pose matches the exported assembly.
-  -->
+  <!-- J9 rotates only the original central cylindrical output STL. -->
   <link name="roll_output">
     <visual>
-      <origin xyz="0 -0.00035 -0.06985"/>
+      <origin xyz="0 -0.00035 -0.06985" />
       <geometry>
-        <mesh filename="meshes/roll-output.glb?v=20260731-cad-clear-3"/>
+        <mesh filename="original-stl-v1/______44380227.stl" />
       </geometry>
-      <material name="imported_motor"/>
+      <material name="imported_motor" />
     </visual>
   </link>
-
   <joint name="wrist_roll_joint" type="revolute">
-    <parent link="roll_motor_housing"/>
-    <child link="roll_output"/>
-    <origin xyz="-0.0192142 -0.0139599 0.0323"/>
-    <axis xyz="0 0 1"/>
-    <limit lower="-3.141593" upper="3.141593"
-           effort="12" velocity="2"/>
+    <parent link="roll_motor_housing" />
+    <child link="roll_output" />
+    <origin xyz="-0.0192142 -0.0139599 0.0323" />
+    <axis xyz="0 0 1" />
+    <limit lower="-3.141593" upper="3.141593" effort="12" velocity="2" />
   </joint>
-
-  <!-- Supplied Gecko attachment, centered on J9 with its front facing +Z. -->
   <link name="gecko_attachment">
     <visual>
-      <origin xyz="-0.010232 0.000357 0"/>
+      <origin xyz="-0.010232 0.000357 0" />
       <geometry>
-        <mesh filename="meshes/gecko.glb?v=20260731-cad-clear-3"
-              scale="0.00045 0.00045 0.00045"/>
+        <mesh filename="original-stl-v1/gecko-original.stl" scale="0.00045 0.00045 0.00045" />
       </geometry>
-      <material name="gecko_finish"/>
+      <material name="gecko_finish" />
     </visual>
   </link>
-
   <joint name="roll_output_to_gecko" type="fixed">
-    <parent link="roll_output"/>
-    <child link="gecko_attachment"/>
-    <origin xyz="0 0 0.0087"/>
+    <parent link="roll_output" />
+    <child link="gecko_attachment" />
+    <origin xyz="0 0 0.0087" />
   </joint>
 </robot>
