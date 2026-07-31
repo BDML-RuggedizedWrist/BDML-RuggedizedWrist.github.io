@@ -1,193 +1,163 @@
 <?xml version="1.0"?>
-<robot name="ruggedized_wrist_web">
-  <material name="frame_dark">
-    <color rgba="0.20 0.22 0.24 1"/>
+<!--
+  Browser model derived only from the Onshape assembly_1 URDF export.
+  Every visible mesh comes from that export; no probe or generated primitive
+  geometry is included.
+-->
+<robot name="ruggedized_wrist_onshape">
+  <material name="imported_motor">
+    <color rgba="0.91 0.91 0.91 1"/>
   </material>
-  <material name="housing_light">
-    <color rgba="0.82 0.80 0.74 1"/>
+  <material name="base_finish">
+    <color rgba="0.501961 0.486275 0.439216 1"/>
   </material>
-  <material name="motor_blue">
-    <color rgba="0.32 0.55 0.66 1"/>
+  <material name="machined_finish">
+    <color rgba="0.901961 0.878431 0.811765 1"/>
   </material>
-  <material name="metal">
-    <color rgba="0.72 0.74 0.76 1"/>
-  </material>
-  <material name="probe">
-    <color rgba="0.86 0.87 0.89 1"/>
+  <material name="pulley_finish">
+    <color rgba="0.917647 0.917647 0.917647 1"/>
   </material>
 
-  <!-- Fixed interface and external frame. -->
+  <link name="root"/>
+
   <link name="wrist_base">
     <visual>
       <geometry>
-        <mesh filename="meshes/wrist-base.stl"/>
+        <mesh filename="meshes/base.glb"/>
       </geometry>
-      <material name="frame_dark"/>
-    </visual>
-    <visual>
-      <origin xyz="0 -0.002 0.020"/>
-      <geometry>
-        <box size="0.056 0.060 0.050"/>
-      </geometry>
-      <material name="motor_blue"/>
-    </visual>
-    <visual>
-      <origin xyz="0 0.030 0.020" rpy="1.570796 0 0"/>
-      <geometry>
-        <cylinder radius="0.025" length="0.058"/>
-      </geometry>
-      <material name="motor_blue"/>
+      <material name="base_finish"/>
     </visual>
   </link>
 
-  <link name="wrist_mount">
+  <joint name="root_to_base" type="fixed">
+    <parent link="root"/>
+    <child link="wrist_base"/>
+    <origin xyz="0 -0.00025 0.04545"/>
+  </joint>
+
+  <link name="mount_to_arm">
     <visual>
       <origin xyz="0 -0.00025 0.0298"/>
       <geometry>
-        <mesh filename="meshes/wrist-mount.stl"/>
+        <mesh filename="meshes/mount-to-arm.glb"/>
       </geometry>
-      <material name="housing_light"/>
+      <material name="machined_finish"/>
     </visual>
   </link>
 
   <joint name="base_to_mount" type="fixed">
     <parent link="wrist_base"/>
-    <child link="wrist_mount"/>
+    <child link="mount_to_arm"/>
     <origin xyz="0 0.00025 -0.0298"/>
   </joint>
 
-  <link name="pitch_drive">
+  <link name="pitch_motor">
     <visual>
-      <origin xyz="0 0.024 0"/>
+      <origin xyz="-0.0223882 -0.033 -0.0159693"/>
       <geometry>
-        <mesh filename="meshes/pitch-pulley.stl"/>
+        <mesh filename="meshes/pitch-motor.glb"/>
       </geometry>
-      <material name="metal"/>
-    </visual>
-    <visual>
-      <origin xyz="0 0.0141 0" rpy="0 -0.094744 0"/>
-      <geometry>
-        <mesh filename="meshes/pitch-pulley-connector.stl"/>
-      </geometry>
-      <material name="housing_light"/>
+      <material name="imported_motor"/>
     </visual>
   </link>
 
-  <joint name="base_to_pitch_drive" type="fixed">
+  <joint name="base_to_pitch_motor" type="fixed">
     <parent link="wrist_base"/>
-    <child link="pitch_drive"/>
-    <origin xyz="0.022388 0.0334 0.015969"/>
+    <child link="pitch_motor"/>
+    <origin xyz="0.0223882 0.0334 0.0159693"/>
   </joint>
 
-  <!-- J8: wrist pitch about local Y. -->
-  <link name="wrist_pitch_link">
+  <link name="pitch_pulley_connector">
     <visual>
-      <origin xyz="0.005723 -0.032 -0.060229" rpy="0 -0.094744 0"/>
+      <origin xyz="0 0.0141 0" rpy="0 -0.0947442 0"/>
       <geometry>
-        <mesh filename="meshes/pitch-bracket.stl"/>
+        <mesh filename="meshes/pitch-pulley-connector.glb"/>
       </geometry>
-      <material name="housing_light"/>
+      <material name="machined_finish"/>
     </visual>
+  </link>
+
+  <joint name="pitch_drive_fixed" type="fixed">
+    <parent link="pitch_motor"/>
+    <child link="pitch_pulley_connector"/>
+    <origin xyz="-0.0223882 -0.0471 -0.0159693"/>
+  </joint>
+
+  <link name="pitch_pulley">
     <visual>
-      <origin xyz="0 -0.012 -0.006" rpy="1.570796 0 0"/>
+      <origin xyz="0 0.024 0"/>
       <geometry>
-        <cylinder radius="0.023" length="0.052"/>
+        <mesh filename="meshes/pitch-pulley.glb"/>
       </geometry>
-      <material name="motor_blue"/>
+      <material name="pulley_finish"/>
     </visual>
+  </link>
+
+  <joint name="connector_to_pulley" type="fixed">
+    <parent link="pitch_pulley_connector"/>
+    <child link="pitch_pulley"/>
+    <origin xyz="0 -0.0099 0" rpy="0 -0.0947442 0"/>
+  </joint>
+
+  <!-- J8 uses the exported pitch-axis mate and its original CAD bracket. -->
+  <link name="roll_motor_bracket">
     <visual>
-      <origin xyz="-0.019214 -0.014310 -0.037550"/>
-      <geometry><mesh filename="meshes/roll-motor-1.stl"/></geometry>
-      <material name="metal"/>
-    </visual>
-    <visual>
-      <origin xyz="-0.019214 -0.014310 -0.037550"/>
-      <geometry><mesh filename="meshes/roll-motor-2.stl"/></geometry>
-      <material name="metal"/>
-    </visual>
-    <visual>
-      <origin xyz="-0.019214 -0.014310 -0.037550"/>
-      <geometry><mesh filename="meshes/roll-motor-3.stl"/></geometry>
-      <material name="metal"/>
-    </visual>
-    <visual>
-      <origin xyz="-0.019214 -0.014310 -0.037550"/>
-      <geometry><mesh filename="meshes/roll-motor-4.stl"/></geometry>
-      <material name="metal"/>
-    </visual>
-    <visual>
-      <origin xyz="-0.019214 -0.014310 -0.037550"/>
-      <geometry><mesh filename="meshes/roll-motor-5.stl"/></geometry>
-      <material name="metal"/>
-    </visual>
-    <visual>
-      <origin xyz="-0.019214 -0.014310 -0.037550"/>
-      <geometry><mesh filename="meshes/roll-motor-6.stl"/></geometry>
-      <material name="metal"/>
-    </visual>
-    <visual>
-      <origin xyz="-0.019214 -0.014310 -0.037550"/>
-      <geometry><mesh filename="meshes/roll-motor-7.stl"/></geometry>
-      <material name="metal"/>
-    </visual>
-    <visual>
-      <origin xyz="-0.019214 -0.014310 -0.037550"/>
-      <geometry><mesh filename="meshes/roll-motor-8.stl"/></geometry>
-      <material name="metal"/>
-    </visual>
-    <visual>
-      <origin xyz="-0.019214 -0.014310 -0.037550"/>
-      <geometry><mesh filename="meshes/roll-motor-9.stl"/></geometry>
-      <material name="metal"/>
+      <origin xyz="0.00572345 -0.032 -0.0602287"
+              rpy="0 -0.0947442 0"/>
+      <geometry>
+        <mesh filename="meshes/roll-motor-bracket.glb"/>
+      </geometry>
+      <material name="machined_finish"/>
     </visual>
   </link>
 
   <joint name="wrist_pitch_joint" type="revolute">
     <parent link="wrist_base"/>
-    <child link="wrist_pitch_link"/>
+    <child link="roll_motor_bracket"/>
     <origin xyz="0 0.0324 0.0605"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.570796" upper="1.570796" effort="12" velocity="2"/>
+    <limit lower="-1.570796" upper="1.570796"
+           effort="12" velocity="2"/>
   </joint>
 
-  <!-- J9: centered terminal roll about local Z. -->
-  <link name="probe_roll_output">
+  <link name="roll_motor_housing">
     <visual>
+      <origin xyz="-0.0192142 -0.0143099 -0.03755"/>
       <geometry>
-        <cylinder radius="0.025" length="0.010"/>
+        <mesh filename="meshes/roll-motor-housing.glb"/>
       </geometry>
-      <material name="frame_dark"/>
+      <material name="imported_motor"/>
     </visual>
+  </link>
+
+  <joint name="bracket_to_roll_motor" type="fixed">
+    <parent link="roll_motor_bracket"/>
+    <child link="roll_motor_housing"/>
+    <origin xyz="0.0212802 -0.0176901 -0.0208303"
+            rpy="0 -0.0947442 0"/>
+  </joint>
+
+  <!--
+    J9 rotates the actual output-stack bodies from the Onshape roll motor.
+    The visual offset exactly cancels the joint offset at zero angle, so the
+    neutral pose matches the exported assembly.
+  -->
+  <link name="roll_output">
     <visual>
-      <origin xyz="0.017 0 0.006"/>
+      <origin xyz="0 -0.00035 -0.06985"/>
       <geometry>
-        <box size="0.034 0.010 0.006"/>
+        <mesh filename="meshes/roll-output.glb"/>
       </geometry>
-      <material name="housing_light"/>
+      <material name="imported_motor"/>
     </visual>
   </link>
 
   <joint name="wrist_roll_joint" type="revolute">
-    <parent link="wrist_pitch_link"/>
-    <child link="probe_roll_output"/>
-    <origin xyz="-0.001159 -0.031650 0.012195" rpy="3.141593 -0.094744 0"/>
+    <parent link="roll_motor_housing"/>
+    <child link="roll_output"/>
+    <origin xyz="-0.0192142 -0.0139599 0.0323"/>
     <axis xyz="0 0 1"/>
-    <limit lower="-3.141593" upper="3.141593" effort="12" velocity="2"/>
-  </joint>
-
-  <link name="linear_probe">
-    <visual>
-      <origin xyz="-0.03323 -0.01336 -0.13254"/>
-      <geometry>
-        <mesh filename="meshes/linear-transducer.stl" scale="0.001 0.001 0.001"/>
-      </geometry>
-      <material name="probe"/>
-    </visual>
-  </link>
-
-  <joint name="roll_output_to_probe" type="fixed">
-    <parent link="probe_roll_output"/>
-    <child link="linear_probe"/>
-    <origin xyz="0 0 0" rpy="3.141593 0 0"/>
+    <limit lower="-3.141593" upper="3.141593"
+           effort="12" velocity="2"/>
   </joint>
 </robot>
