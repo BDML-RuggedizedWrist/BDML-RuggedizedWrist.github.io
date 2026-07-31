@@ -17,6 +17,9 @@
   <material name="pulley_finish">
     <color rgba="0.917647 0.917647 0.917647 1"/>
   </material>
+  <material name="gecko_finish">
+    <color rgba="0.35 0.43 0.31 1"/>
+  </material>
 
   <link name="root"/>
 
@@ -138,7 +141,8 @@
   </joint>
 
   <!--
-    J9 rotates the actual output-stack bodies from the Onshape roll motor.
+    J9 rotates only the central cylindrical output from the Onshape roll motor.
+    The surrounding square housing remains fixed.
     The visual offset exactly cancels the joint offset at zero angle, so the
     neutral pose matches the exported assembly.
   -->
@@ -159,5 +163,23 @@
     <axis xyz="0 0 1"/>
     <limit lower="-3.141593" upper="3.141593"
            effort="12" velocity="2"/>
+  </joint>
+
+  <!-- Supplied Gecko attachment, centered on J9 with its front facing +Z. -->
+  <link name="gecko_attachment">
+    <visual>
+      <origin xyz="-0.010232 0.000357 0"/>
+      <geometry>
+        <mesh filename="meshes/gecko.glb"
+              scale="0.00045 0.00045 0.00045"/>
+      </geometry>
+      <material name="gecko_finish"/>
+    </visual>
+  </link>
+
+  <joint name="roll_output_to_gecko" type="fixed">
+    <parent link="roll_output"/>
+    <child link="gecko_attachment"/>
+    <origin xyz="0 0 0.0087"/>
   </joint>
 </robot>
