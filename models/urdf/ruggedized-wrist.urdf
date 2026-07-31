@@ -26,7 +26,7 @@
   <link name="wrist_base">
     <visual>
       <geometry>
-        <mesh filename="meshes/base.glb"/>
+        <mesh filename="meshes/base.glb?v=20260731-j9-gecko-2"/>
       </geometry>
       <material name="base_finish"/>
     </visual>
@@ -42,7 +42,7 @@
     <visual>
       <origin xyz="0 -0.00025 0.0298"/>
       <geometry>
-        <mesh filename="meshes/mount-to-arm.glb"/>
+        <mesh filename="meshes/mount-to-arm.glb?v=20260731-j9-gecko-2"/>
       </geometry>
       <material name="machined_finish"/>
     </visual>
@@ -58,7 +58,7 @@
     <visual>
       <origin xyz="-0.0223882 -0.033 -0.0159693"/>
       <geometry>
-        <mesh filename="meshes/pitch-motor.glb"/>
+        <mesh filename="meshes/pitch-motor.glb?v=20260731-j9-gecko-2"/>
       </geometry>
       <material name="imported_motor"/>
     </visual>
@@ -74,7 +74,7 @@
     <visual>
       <origin xyz="0 0.0141 0" rpy="0 -0.0947442 0"/>
       <geometry>
-        <mesh filename="meshes/pitch-pulley-connector.glb"/>
+        <mesh filename="meshes/pitch-pulley-connector.glb?v=20260731-j9-gecko-2"/>
       </geometry>
       <material name="machined_finish"/>
     </visual>
@@ -90,7 +90,7 @@
     <visual>
       <origin xyz="0 0.024 0"/>
       <geometry>
-        <mesh filename="meshes/pitch-pulley.glb"/>
+        <mesh filename="meshes/pitch-pulley.glb?v=20260731-j9-gecko-2"/>
       </geometry>
       <material name="pulley_finish"/>
     </visual>
@@ -108,7 +108,7 @@
       <origin xyz="0.00572345 -0.032 -0.0602287"
               rpy="0 -0.0947442 0"/>
       <geometry>
-        <mesh filename="meshes/roll-motor-bracket.glb"/>
+        <mesh filename="meshes/roll-motor-bracket.glb?v=20260731-j9-gecko-2"/>
       </geometry>
       <material name="machined_finish"/>
     </visual>
@@ -127,7 +127,7 @@
     <visual>
       <origin xyz="-0.0192142 -0.0143099 -0.03755"/>
       <geometry>
-        <mesh filename="meshes/roll-motor-housing.glb"/>
+        <mesh filename="meshes/roll-motor-housing.glb?v=20260731-j9-gecko-2"/>
       </geometry>
       <material name="imported_motor"/>
     </visual>
@@ -150,7 +150,7 @@
     <visual>
       <origin xyz="0 -0.00035 -0.06985"/>
       <geometry>
-        <mesh filename="meshes/roll-output.glb"/>
+        <mesh filename="meshes/roll-output.glb?v=20260731-j9-gecko-2"/>
       </geometry>
       <material name="imported_motor"/>
     </visual>
@@ -170,7 +170,7 @@
     <visual>
       <origin xyz="-0.010232 0.000357 0"/>
       <geometry>
-        <mesh filename="meshes/gecko.glb"
+        <mesh filename="meshes/gecko.glb?v=20260731-j9-gecko-2"
               scale="0.00045 0.00045 0.00045"/>
       </geometry>
       <material name="gecko_finish"/>
